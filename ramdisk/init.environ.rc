@@ -1,5 +1,6 @@
 # set up the global environment
 on init
+    export PATH /bin:/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin:/res/asset:/res
     export ANDROID_BOOTLOGO 1
     export ANDROID_ROOT /system
     export ANDROID_ASSETS /system/app
