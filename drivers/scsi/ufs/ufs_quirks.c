@@ -52,10 +52,10 @@ static struct ufs_card_fix ufs_fixups[] = {
 static int ufs_get_capacity_info(struct ufs_hba *hba,  u64 *pcapacity)
 {
        int err;
-       u8 geometry_buf[QUERY_DESC_GEOMETRY_MAZ_SIZE];
+       u8 geometry_buf[QUERY_DESC_GEOMETRY_DEF_SIZE];
 
        err = ufshcd_read_geometry_desc(hba, geometry_buf,
-                                       QUERY_DESC_GEOMETRY_MAZ_SIZE);
+                                       QUERY_DESC_GEOMETRY_DEF_SIZE);
        if (err)
                goto out;
 
@@ -151,7 +151,7 @@ out:
 void ufs_advertise_fixup_device(struct ufs_hba *hba)
 {
 	int err;
-	u8 str_desc_buf[QUERY_DESC_STRING_MAX_SIZE + 1];
+	u8 str_desc_buf[QUERY_DESC_MAX_SIZE + 1];
 	char *model;
 	struct ufs_card_fix *f;
 
@@ -159,13 +159,13 @@ void ufs_advertise_fixup_device(struct ufs_hba *hba)
 	if (!model)
 		goto out;
 
-	memset(str_desc_buf, 0, QUERY_DESC_STRING_MAX_SIZE);
+	memset(str_desc_buf, 0, QUERY_DESC_MAX_SIZE);
 	err = ufshcd_read_string_desc(hba, hba->dev_info.i_product_name,
-			str_desc_buf, QUERY_DESC_STRING_MAX_SIZE, ASCII_STD);
+			str_desc_buf, QUERY_DESC_MAX_SIZE, ASCII_STD);
 	if (err)
 		goto out;
 
-	str_desc_buf[QUERY_DESC_STRING_MAX_SIZE] = '\0';
+	str_desc_buf[QUERY_DESC_MAX_SIZE] = '\0';
 	strlcpy(model, (str_desc_buf + QUERY_DESC_HDR_SIZE),
 		min_t(u8, str_desc_buf[QUERY_DESC_LENGTH_OFFSET],
 		      MAX_MODEL_LEN));
