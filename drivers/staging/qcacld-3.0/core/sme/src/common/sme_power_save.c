@@ -84,11 +84,11 @@ static void sme_ps_fill_uapsd_req_params(tpAniSirGlobal mac_ctx,
 	struct ps_params *ps_param = &ps_global_info->ps_params[session_id];
 
 	uapsd_delivery_mask =
-		ps_param->uapsd_per_ac_bit_mask &
+		ps_param->uapsd_per_ac_bit_mask |
 		ps_param->uapsd_per_ac_delivery_enable_mask;
 
 	uapsd_trigger_mask =
-		ps_param->uapsd_per_ac_bit_mask &
+		ps_param->uapsd_per_ac_bit_mask |
 		ps_param->uapsd_per_ac_trigger_enable_mask;
 
 	uapsdParams->bkDeliveryEnabled =
@@ -441,7 +441,7 @@ QDF_STATUS sme_ps_process_command(tpAniSirGlobal mac_ctx, uint32_t session_id,
 
 	if (!CSR_IS_SESSION_VALID(mac_ctx, session_id)) {
 		sme_err("Invalid Session_id: %d", session_id);
-		return eSIR_FAILURE;
+		return QDF_STATUS_E_INVAL;
 	}
 	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
 			FL("Power Save command %d"), command);
@@ -531,6 +531,7 @@ QDF_STATUS sme_ps_enable_disable(tHalHandle hal_ctx, uint32_t session_id,
 
 QDF_STATUS sme_ps_timer_flush_sync(tHalHandle hal, uint8_t session_id)
 {
+	QDF_STATUS status;
 	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hal);
 	struct ps_params *ps_parm;
 	enum ps_state ps_state;
@@ -538,27 +539,26 @@ QDF_STATUS sme_ps_timer_flush_sync(tHalHandle hal, uint8_t session_id)
 	struct sEnablePsParams *req;
 	t_wma_handle *wma;
 
+	status = sme_enable_sta_ps_check(mac_ctx, session_id);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		sme_debug("Power save not allowed for vdev id %d", session_id);
+		return QDF_STATUS_SUCCESS;
+	}
+
 	ps_parm = &mac_ctx->sme.ps_global_info.ps_params[session_id];
 	tstate = qdf_mc_timer_get_current_state(&ps_parm->auto_ps_enable_timer);
 	if (tstate != QDF_TIMER_STATE_RUNNING)
 		return QDF_STATUS_SUCCESS;
 
-	if (QDF_STATUS_SUCCESS != sme_enable_sta_ps_check(mac_ctx,
-					session_id)) {
-		sme_debug("Power save not allowed for vdev id %d", session_id);
-		qdf_mc_timer_stop(&ps_parm->auto_ps_enable_timer);
-		return QDF_STATUS_SUCCESS;
-	}
-
 	sme_debug("flushing powersave enable for vdev %u", session_id);
+
+	qdf_mc_timer_stop(&ps_parm->auto_ps_enable_timer);
 
 	wma = cds_get_context(QDF_MODULE_ID_WMA);
 	if (!wma) {
 		sme_err("wma is null");
 		return QDF_STATUS_E_INVAL;
 	}
-
-	qdf_mc_timer_stop(&ps_parm->auto_ps_enable_timer);
 
 	req = qdf_mem_malloc(sizeof(*req));
 	if (!req) {
@@ -823,7 +823,7 @@ QDF_STATUS sme_set_ps_preferred_network_list(tHalHandle hal_ctx,
 
 	request_buf = qdf_mem_malloc(sizeof(tSirPNOScanReq) +
 		      (request->num_vendor_oui) *
-		      (sizeof(struct vendor_oui)));
+		      (sizeof(uint32_t)));
 
 	if (NULL == request_buf) {
 		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
@@ -833,7 +833,7 @@ QDF_STATUS sme_set_ps_preferred_network_list(tHalHandle hal_ctx,
 
 	qdf_mem_copy(request_buf, request, sizeof(tSirPNOScanReq) +
 			(request->num_vendor_oui) *
-			(sizeof(struct vendor_oui)));
+			(sizeof(uint32_t)));
 
 	/*Must translate the mode first */
 	uc_dot11_mode = (uint8_t) csr_translate_to_wni_cfg_dot11_mode(mac_ctx,
@@ -1031,7 +1031,7 @@ tSirRetStatus sme_post_pe_message(tpAniSirGlobal mac_ctx, tpSirMsgQ msg)
 {
 	QDF_STATUS qdf_status;
 
-	qdf_status = cds_mq_post_message(CDS_MQ_ID_PE, (cds_msg_t *) msg);
+	qdf_status = cds_mq_post_message(QDF_MODULE_ID_PE, (cds_msg_t *) msg);
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 		sme_err("cds_mq_post_message failed with status: %d",
 			qdf_status);
@@ -1054,7 +1054,7 @@ QDF_STATUS sme_ps_enable_auto_ps_timer(tHalHandle hal_ctx,
 		return QDF_STATUS_SUCCESS;
 	}
 
-	sme_err("Start auto_ps_timer for %d ms", timeout);
+	sme_info("Start auto_ps_timer for %d ms", timeout);
 
 	qdf_status = qdf_mc_timer_start(&ps_param->auto_ps_enable_timer,
 		timeout);
@@ -1082,7 +1082,7 @@ QDF_STATUS sme_ps_disable_auto_ps_timer(tHalHandle hal_ctx,
 	if (QDF_TIMER_STATE_RUNNING ==
 			qdf_mc_timer_get_current_state(
 				&ps_param->auto_ps_enable_timer)) {
-		sme_err("Stop auto_ps_enable_timer Timer for session ID: %d",
+		sme_info("Stop auto_ps_enable_timer Timer for session ID: %d",
 				session_id);
 		qdf_mc_timer_stop(&ps_param->auto_ps_enable_timer);
 	}
@@ -1129,24 +1129,26 @@ QDF_STATUS sme_ps_open_per_session(tHalHandle hal_ctx, uint32_t session_id)
 void sme_auto_ps_entry_timer_expired(void *data)
 {
 	struct ps_params *ps_params = (struct ps_params *)data;
-	tpAniSirGlobal mac_ctx = (tpAniSirGlobal)ps_params->mac_ctx;
-	uint32_t session_id = ps_params->session_id;
+	tpAniSirGlobal mac_ctx;
+	uint32_t session_id;
 	QDF_STATUS status;
 
+	if (!ps_params) {
+		sme_err("ps_params is NULL");
+		return;
+	}
+	mac_ctx = (tpAniSirGlobal)ps_params->mac_ctx;
+	if (!mac_ctx) {
+		sme_err("mac_ctx is NULL");
+		return;
+	}
+	session_id = ps_params->session_id;
 	sme_debug("auto_ps_timer expired, enabling powersave");
 
 	status = sme_enable_sta_ps_check(mac_ctx, session_id);
 	if (QDF_STATUS_SUCCESS == status)
 		sme_ps_enable_disable((tHalHandle)mac_ctx, session_id,
 				SME_PS_ENABLE);
-	else {
-		sme_debug("failed to enable powersave, restarting timer");
-		status = qdf_mc_timer_start(&ps_params->auto_ps_enable_timer,
-					    AUTO_PS_ENTRY_TIMER_DEFAULT_VALUE);
-		if (!QDF_IS_STATUS_SUCCESS(status)
-				&& (QDF_STATUS_E_ALREADY != status))
-			sme_err("Cannot start traffic timer");
-	}
 }
 
 QDF_STATUS sme_ps_close(tHalHandle hal_ctx)

@@ -409,7 +409,7 @@ static void purge_sme_cmd_list(tpAniSirGlobal pMac)
 }
 
 void purge_sme_session_cmd_list(tpAniSirGlobal pMac, uint32_t sessionId,
-				tDblLinkList *pList)
+				tDblLinkList *pList, bool flush_all_cmds)
 {
 	/* release any out standing commands back to free command list */
 	tListElem *pEntry, *pNext;
@@ -427,6 +427,12 @@ void purge_sme_session_cmd_list(tpAniSirGlobal pMac, uint32_t sessionId,
 	while (pEntry != NULL) {
 		pNext = csr_ll_next(pList, pEntry, LL_ACCESS_NOLOCK);
 		pCommand = GET_BASE_ADDR(pEntry, tSmeCmd, Link);
+		if (!flush_all_cmds &&
+		    csr_is_disconnect_cmd(pCommand)) {
+			sme_debug("Ignore disconnect");
+			pEntry = pNext;
+			continue;
+		}
 		if (pCommand->sessionId == sessionId) {
 			if (csr_ll_remove_entry(pList, pEntry,
 						LL_ACCESS_NOLOCK))
@@ -602,7 +608,7 @@ tSmeCmd *sme_get_command_buffer(tpAniSirGlobal pMac)
 				false,
 				pMac->sme.enableSelfRecovery ? true : false);
 		else if (pMac->sme.enableSelfRecovery)
-			cds_trigger_recovery();
+			cds_trigger_recovery(CDS_GET_MSG_BUFF_FAILURE);
 		else
 			QDF_BUG(0);
 	}
@@ -659,7 +665,7 @@ static void sme_abort_command(tpAniSirGlobal pMac, tSmeCmd *pCommand,
 			/* process the msg */
 			if (callback)
 				callback(pMac, pCommand->u.remainChlCmd.
-					callbackCtx, eCSR_SCAN_ABORT,
+					callbackCtx, QDF_STATUS_E_FAILURE,
 					pCommand->u.remainChlCmd.scan_id);
 		}
 		sme_release_command(pMac, pCommand);
@@ -1426,6 +1432,8 @@ QDF_STATUS sme_update_config(tHalHandle hHal, tpSmeConfigParams
 		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 			  "Could not pass on WNI_CFG_SCAN_IN_POWERSAVE to CFG");
 
+	pMac->snr_monitor_enabled = pSmeConfigParams->snr_monitor_enabled;
+
 	return status;
 }
 
@@ -1439,7 +1447,7 @@ QDF_STATUS sme_update_config(tHalHandle hHal, tpSmeConfigParams
  * Return: Return the status of the updation.
  */
 QDF_STATUS sme_update_roam_params(tHalHandle hal,
-	uint8_t session_id, struct roam_ext_params roam_params_src,
+	uint8_t session_id, struct roam_ext_params *roam_params_src,
 	int update_param)
 {
 	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hal);
@@ -1450,31 +1458,31 @@ QDF_STATUS sme_update_roam_params(tHalHandle hal,
 	switch (update_param) {
 	case REASON_ROAM_EXT_SCAN_PARAMS_CHANGED:
 		roam_params_dst->raise_rssi_thresh_5g =
-			roam_params_src.raise_rssi_thresh_5g;
+			roam_params_src->raise_rssi_thresh_5g;
 		roam_params_dst->drop_rssi_thresh_5g =
-			roam_params_src.drop_rssi_thresh_5g;
+			roam_params_src->drop_rssi_thresh_5g;
 		roam_params_dst->raise_factor_5g =
-			roam_params_src.raise_factor_5g;
+			roam_params_src->raise_factor_5g;
 		roam_params_dst->drop_factor_5g =
-			roam_params_src.drop_factor_5g;
+			roam_params_src->drop_factor_5g;
 		roam_params_dst->max_raise_rssi_5g =
-			roam_params_src.max_raise_rssi_5g;
+			roam_params_src->max_raise_rssi_5g;
 		roam_params_dst->max_drop_rssi_5g =
-			roam_params_src.max_drop_rssi_5g;
+			roam_params_src->max_drop_rssi_5g;
 		roam_params_dst->alert_rssi_threshold =
-			roam_params_src.alert_rssi_threshold;
+			roam_params_src->alert_rssi_threshold;
 		roam_params_dst->is_5g_pref_enabled = true;
 		break;
 	case REASON_ROAM_SET_SSID_ALLOWED:
 		qdf_mem_set(&roam_params_dst->ssid_allowed_list, 0,
 				sizeof(tSirMacSSid) * MAX_SSID_ALLOWED_LIST);
 		roam_params_dst->num_ssid_allowed_list =
-			roam_params_src.num_ssid_allowed_list;
+			roam_params_src->num_ssid_allowed_list;
 		for (i = 0; i < roam_params_dst->num_ssid_allowed_list; i++) {
 			roam_params_dst->ssid_allowed_list[i].length =
-				roam_params_src.ssid_allowed_list[i].length;
+				roam_params_src->ssid_allowed_list[i].length;
 			qdf_mem_copy(roam_params_dst->ssid_allowed_list[i].ssId,
-				roam_params_src.ssid_allowed_list[i].ssId,
+				roam_params_src->ssid_allowed_list[i].ssId,
 				roam_params_dst->ssid_allowed_list[i].length);
 		}
 		break;
@@ -1482,28 +1490,28 @@ QDF_STATUS sme_update_roam_params(tHalHandle hal,
 		qdf_mem_set(&roam_params_dst->bssid_favored, 0,
 			sizeof(tSirMacAddr) * MAX_BSSID_FAVORED);
 		roam_params_dst->num_bssid_favored =
-			roam_params_src.num_bssid_favored;
+			roam_params_src->num_bssid_favored;
 		for (i = 0; i < roam_params_dst->num_bssid_favored; i++) {
 			qdf_mem_copy(&roam_params_dst->bssid_favored[i],
-				&roam_params_src.bssid_favored[i],
+				&roam_params_src->bssid_favored[i],
 				sizeof(tSirMacAddr));
 			roam_params_dst->bssid_favored_factor[i] =
-				roam_params_src.bssid_favored_factor[i];
+				roam_params_src->bssid_favored_factor[i];
 		}
 		break;
 	case REASON_ROAM_SET_BLACKLIST_BSSID:
 		qdf_mem_set(&roam_params_dst->bssid_avoid_list, 0,
 			QDF_MAC_ADDR_SIZE * MAX_BSSID_AVOID_LIST);
 		roam_params_dst->num_bssid_avoid_list =
-			roam_params_src.num_bssid_avoid_list;
+			roam_params_src->num_bssid_avoid_list;
 		for (i = 0; i < roam_params_dst->num_bssid_avoid_list; i++) {
 			qdf_copy_macaddr(&roam_params_dst->bssid_avoid_list[i],
-					&roam_params_src.bssid_avoid_list[i]);
+					&roam_params_src->bssid_avoid_list[i]);
 		}
 		break;
 	case REASON_ROAM_GOOD_RSSI_CHANGED:
 		roam_params_dst->good_rssi_roam =
-			roam_params_src.good_rssi_roam;
+			roam_params_src->good_rssi_roam;
 		break;
 	default:
 		break;
@@ -2111,7 +2119,7 @@ QDF_STATUS sme_set_cckm_ie(tHalHandle hHal, uint8_t sessionId,
 QDF_STATUS sme_set_ese_beacon_request(tHalHandle hHal, const uint8_t sessionId,
 				      const tCsrEseBeaconReq *pEseBcnReq)
 {
-	QDF_STATUS status = eSIR_SUCCESS;
+	QDF_STATUS status;
 	tpAniSirGlobal pMac = PMAC_STRUCT(hHal);
 	tpSirBeaconReportReqInd pSmeBcnReportReq = NULL;
 	tCsrEseBeaconReqParams *pBeaconReq = NULL;
@@ -2764,6 +2772,18 @@ QDF_STATUS sme_process_msg(tHalHandle hHal, cds_msg_t *pMsg)
 		}
 		break;
 #endif
+	case eWNI_SME_GET_PEER_INFO_IND:
+		if (pMac->sme.pget_peer_info_ind_cb)
+			pMac->sme.pget_peer_info_ind_cb(pMsg->bodyptr,
+				pMac->sme.pget_peer_info_cb_context);
+		qdf_mem_free(pMsg->bodyptr);
+		break;
+	case eWNI_SME_GET_PEER_INFO_EXT_IND:
+		if (pMac->sme.pget_peer_info_ext_ind_cb)
+			pMac->sme.pget_peer_info_ext_ind_cb(pMsg->bodyptr,
+				pMac->sme.pget_peer_info_ext_cb_context);
+		qdf_mem_free(pMsg->bodyptr);
+		break;
 	case eWNI_SME_CSA_OFFLOAD_EVENT:
 		if (pMsg->bodyptr) {
 			csr_scan_flush_bss_entry(pMac, pMsg->bodyptr);
@@ -3308,7 +3328,7 @@ QDF_STATUS sme_scan_request(tHalHandle hal, uint8_t session_id,
 	msg.reserved = 0;
 	msg.bodyval = 0;
 	if (QDF_STATUS_SUCCESS !=
-		cds_mq_post_message(CDS_MQ_ID_SME, &msg)) {
+		cds_mq_post_message(QDF_MODULE_ID_SME, &msg)) {
 		sme_err("sme_scan_req failed to post msg");
 		csr_scan_free_request(mac_ctx, scan_msg->scan_param);
 		qdf_mem_free(scan_msg->scan_param);
@@ -4930,8 +4950,9 @@ QDF_STATUS sme_wow_add_pattern(tHalHandle hal,
 	if (eSIR_SUCCESS != ret_code) {
 		sme_err("Posting WMA_WOWL_ADD_BCAST_PTRN failed, reason: %X",
 			ret_code);
+		return QDF_STATUS_E_FAILURE;
 	}
-	return ret_code;
+	return QDF_STATUS_SUCCESS;
 }
 
 /**
@@ -4967,11 +4988,13 @@ QDF_STATUS sme_wow_delete_pattern(tHalHandle hal,
 	sme_debug("Sending WMA_WOWL_DEL_BCAST_PTRN");
 
 	ret_code = wma_post_ctrl_msg(pMac, &msg_q);
-	if (eSIR_SUCCESS != ret_code)
+	if (eSIR_SUCCESS != ret_code) {
 		sme_err("Posting WMA_WOWL_DEL_BCAST_PTRN failed, reason: %X",
 			ret_code);
+		return QDF_STATUS_E_FAILURE;
+	}
 
-	return ret_code;
+	return QDF_STATUS_SUCCESS;
 }
 
 /**
@@ -5092,7 +5115,6 @@ QDF_STATUS sme_roam_set_key(tHalHandle hal,  uint8_t session_id,
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hal);
 	uint32_t roam_id;
-	uint32_t i;
 	tCsrRoamSession *session = NULL;
 	struct ps_global_info *ps_global_info = &mac_ctx->sme.ps_global_info;
 
@@ -5115,8 +5137,6 @@ QDF_STATUS sme_roam_set_key(tHalHandle hal,  uint8_t session_id,
 		*ptr_roam_id = roam_id;
 
 	sme_debug("keyLength: %d", set_key->keyLength);
-	for (i = 0; i < set_key->keyLength; i++)
-		sme_debug("%02x", set_key->Key[i]);
 
 	sme_debug("Session_id: %d roam_id: %d", session_id, roam_id);
 	session = CSR_GET_SESSION(mac_ctx, session_id);
@@ -5419,8 +5439,8 @@ QDF_STATUS sme_change_country_code(tHalHandle hHal,
 				   uint8_t *pCountry,
 				   void *pContext,
 				   void *p_cds_context,
-				   tAniBool countryFromUserSpace,
-				   tAniBool sendRegHint)
+				   bool countryFromUserSpace,
+				   bool sendRegHint)
 {
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	tpAniSirGlobal pMac = PMAC_STRUCT(hHal);
@@ -5436,7 +5456,7 @@ QDF_STATUS sme_change_country_code(tHalHandle hHal,
 		    && (!pMac->roam.configParam.
 			fSupplicantCountryCodeHasPriority)) {
 
-			sme_warn("Set Country Code Fail since the STA is associated and userspace does not have priority");
+			sme_warn("Set Country Code Fail since the userspace does not have priority");
 
 			sme_release_global_lock(&pMac->sme);
 			status = QDF_STATUS_E_FAILURE;
@@ -5464,7 +5484,7 @@ QDF_STATUS sme_change_country_code(tHalHandle hHal,
 		msg.reserved = 0;
 
 		if (QDF_STATUS_SUCCESS !=
-		    cds_mq_post_message(CDS_MQ_ID_SME, &msg)) {
+		    cds_mq_post_message(QDF_MODULE_ID_SME, &msg)) {
 			sme_err("sme_change_country_code failed to post msg to self");
 			qdf_mem_free((void *)pMsg);
 			status = QDF_STATUS_E_FAILURE;
@@ -5522,7 +5542,7 @@ QDF_STATUS sme_generic_change_country_code(tHalHandle hHal,
 		msg.reserved = 0;
 
 		if (QDF_STATUS_SUCCESS !=
-		    cds_mq_post_message(CDS_MQ_ID_SME, &msg)) {
+		    cds_mq_post_message(QDF_MODULE_ID_SME, &msg)) {
 			sme_err("sme_generic_change_country_code failed to post msg to self");
 			qdf_mem_free(pMsg);
 			status = QDF_STATUS_E_FAILURE;
@@ -5587,7 +5607,7 @@ QDF_STATUS sme_dhcp_start_ind(tHalHandle hHal,
 		cds_message.reserved = 0;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 sessionId, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: Post DHCP Start MSG fail", __func__);
@@ -5654,7 +5674,7 @@ QDF_STATUS sme_dhcp_stop_ind(tHalHandle hHal,
 		cds_message.reserved = 0;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 sessionId, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: Post DHCP Stop MSG fail", __func__);
@@ -5707,7 +5727,7 @@ QDF_STATUS sme_tx_fail_monitor_start_stop_ind(tHalHandle hHal, uint8_t
 		cds_message.bodyptr = pMsg;
 		cds_message.reserved = 0;
 
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: Post TX Fail monitor Start MSG fail",
@@ -6071,12 +6091,16 @@ QDF_STATUS sme_open_session(tHalHandle hHal, csr_roam_completeCallback callback,
  *
  * @hHal - The handle returned by mac_open.
  * @sessionId - A previous opened session's ID.
+ * @flush_all_sme_cmds: whether all sme commands needs to be flushed
+ * @callback: pointer to callback API
+ * @pContext: context needs to be passed to callback
  *
  * Return QDF_STATUS_SUCCESS - session is closed.
  * Other status means SME is failed to open the session.
  *	QDF_STATUS_E_INVAL - session is not opened.
  */
 QDF_STATUS sme_close_session(tHalHandle hHal, uint8_t sessionId,
+			     bool flush_all_sme_cmds,
 			     csr_roamSessionCloseCallback callback,
 			     void *pContext)
 {
@@ -6088,6 +6112,7 @@ QDF_STATUS sme_close_session(tHalHandle hHal, uint8_t sessionId,
 	status = sme_acquire_global_lock(&pMac->sme);
 	if (QDF_IS_STATUS_SUCCESS(status)) {
 		status = csr_roam_close_session(pMac, sessionId, false,
+						flush_all_sme_cmds,
 						callback, pContext);
 
 		sme_release_global_lock(&pMac->sme);
@@ -6302,7 +6327,9 @@ QDF_STATUS sme_set_gtk_offload(tHalHandle hHal,
 
 	*request_buf = *pGtkOffload;
 
-	if (pSession->is_fils_connection)
+	/* If FILS Roaming is not supported by fw, disable GTK Offload */
+	if (pSession->is_fils_connection &&
+	    !pMac->is_fils_roaming_supported)
 		request_buf->ulFlags = GTK_OFFLOAD_DISABLE;
 
 	msg.type = WMA_GTK_OFFLOAD_REQ;
@@ -6789,7 +6816,7 @@ QDF_STATUS sme_remain_on_channel(tHalHandle hHal, uint8_t session_id,
 	msg.reserved = 0;
 	msg.bodyval = 0;
 	if (QDF_STATUS_SUCCESS !=
-		cds_mq_post_message(CDS_MQ_ID_SME, &msg)) {
+		cds_mq_post_message(QDF_MODULE_ID_SME, &msg)) {
 		sme_err("sme_scan_req failed to post msg");
 		qdf_mem_free(roc_msg);
 		status = QDF_STATUS_E_FAILURE;
@@ -6970,7 +6997,7 @@ QDF_STATUS sme_configure_suspend_ind(tHalHandle hHal,
 		cds_message.type = WMA_WLAN_SUSPEND_IND;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			pMac->readyToSuspendCallback = NULL;
 			pMac->readyToSuspendContext = NULL;
@@ -7009,7 +7036,7 @@ QDF_STATUS sme_configure_resume_req(tHalHandle hHal,
 		cds_message.type = WMA_WLAN_RESUME_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			status = QDF_STATUS_E_FAILURE;
 
@@ -7057,7 +7084,7 @@ QDF_STATUS sme_configure_ext_wow(tHalHandle hHal,
 		qdf_mem_copy(MsgPtr, wlanExtParams, sizeof(*MsgPtr));
 		cds_message.bodyptr = MsgPtr;
 		cds_message.type = WMA_WLAN_EXT_WOW;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			pMac->readyToExtWoWCallback = NULL;
 			pMac->readyToExtWoWContext = NULL;
@@ -7105,7 +7132,7 @@ QDF_STATUS sme_configure_app_type1_params(tHalHandle hHal,
 		qdf_mem_copy(MsgPtr, wlanAppType1Params, sizeof(*MsgPtr));
 		cds_message.bodyptr = MsgPtr;
 		cds_message.type = WMA_WLAN_SET_APP_TYPE1_PARAMS;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			qdf_mem_free(MsgPtr);
 			status = QDF_STATUS_E_FAILURE;
@@ -7148,7 +7175,7 @@ QDF_STATUS sme_configure_app_type2_params(tHalHandle hHal,
 		qdf_mem_copy(MsgPtr, wlanAppType2Params, sizeof(*MsgPtr));
 		cds_message.bodyptr = MsgPtr;
 		cds_message.type = WMA_WLAN_SET_APP_TYPE2_PARAMS;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			qdf_mem_free(MsgPtr);
 			status = QDF_STATUS_E_FAILURE;
@@ -7453,7 +7480,7 @@ QDF_STATUS sme_set_tsf_gpio(tHalHandle h_hal, uint32_t pinvalue)
 		tsf_msg.reserved = 0;
 		tsf_msg.bodyval = pinvalue;
 
-		status = cds_mq_post_message(CDS_MQ_ID_WMA, &tsf_msg);
+		status = cds_mq_post_message(QDF_MODULE_ID_WMA, &tsf_msg);
 		if (!QDF_IS_STATUS_SUCCESS(status)) {
 			sme_err("Unable to post WMA_TSF_GPIO_PIN");
 			status = QDF_STATUS_E_FAILURE;
@@ -7483,8 +7510,17 @@ void sme_set_cc_src(tHalHandle hHal, enum country_src cc_src)
 {
 	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hHal);
 
+	/*
+	 * in reg callback from kernel, for 11d source also
+	 * the source is SOURCE_USERSPACE
+	 */
+	if ((cc_src == SOURCE_USERSPACE) &&
+	    (SOURCE_11D == mac_ctx->reg_hint_src))
+		return;
+
 	mac_ctx->reg_hint_src = cc_src;
 }
+
 /*
  * sme_handle_change_country_code() - Change Country code, Reg Domain and
  * channel list
@@ -7634,19 +7670,23 @@ sme_handle_generic_change_country_code(tpAniSirGlobal mac_ctx,
 	tAniGenericChangeCountryCodeReq *msg = pMsgBuf;
 
 	if (SOURCE_11D != mac_ctx->reg_hint_src) {
-		if (SOURCE_DRIVER != mac_ctx->reg_hint_src) {
+		if (SOURCE_CORE == mac_ctx->reg_hint_src) {
+			if (mac_ctx->roam.configParam.enable_11d_in_world_mode
+			    == true)
+				mac_ctx->roam.configParam.Is11dSupportEnabled
+					= true;
+		} else if (SOURCE_USERSPACE == mac_ctx->reg_hint_src) {
 			if (user_ctry_priority)
 				mac_ctx->roam.configParam.Is11dSupportEnabled =
 					false;
 			else {
+				mac_ctx->roam.configParam.Is11dSupportEnabled =
+					mac_ctx->roam.configParam.
+					Is11dSupportEnabledOriginal;
 				if (mac_ctx->roam.configParam.
-					Is11dSupportEnabled &&
-					mac_ctx->scan.countryCode11d[0] != 0) {
-
+				    Is11dSupportEnabled) {
 					sme_debug("restore 11d");
-
-					status =
-					csr_get_regulatory_domain_for_country(
+					status = csr_get_regulatory_domain_for_country(
 						mac_ctx,
 						mac_ctx->scan.countryCode11d,
 						&reg_domain_id,
@@ -7654,16 +7694,18 @@ sme_handle_generic_change_country_code(tpAniSirGlobal mac_ctx,
 					return QDF_STATUS_E_FAILURE;
 				}
 			}
+		} else if (SOURCE_DRIVER == mac_ctx->reg_hint_src) {
+			mac_ctx->roam.configParam.Is11dSupportEnabled =
+				mac_ctx->roam.configParam.
+				Is11dSupportEnabledOriginal;
 		}
 	} else {
-		/* if kernel gets invalid country code; it
-		 *  resets the country code to world
-		 */
-		if (('0' != msg->countryCode[0]) ||
-		    ('0' != msg->countryCode[1]))
-			qdf_mem_copy(mac_ctx->scan.countryCode11d,
-				     msg->countryCode,
-				     WNI_CFG_COUNTRY_CODE_LEN);
+		qdf_mem_copy(mac_ctx->scan.countryCode11d,
+			     msg->countryCode,
+			     WNI_CFG_COUNTRY_CODE_LEN);
+		mac_ctx->roam.configParam.Is11dSupportEnabled =
+			mac_ctx->roam.configParam.Is11dSupportEnabledOriginal;
+		mac_ctx->reg_hint_src = SOURCE_USERSPACE;
 	}
 
 	qdf_mem_copy(mac_ctx->scan.countryCodeCurrent,
@@ -7752,7 +7794,7 @@ QDF_STATUS sme_8023_multicast_list(tHalHandle hHal, uint8_t sessionId,
 	tCsrRoamSession *pSession = NULL;
 
 	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
-		"%s: ulMulticastAddrCnt: %d, multicastAddr[0]: %p", __func__,
+		"%s: ulMulticastAddrCnt: %d, multicastAddr[0]: %pK", __func__,
 		  pMulticastAddrs->ulMulticastAddrCnt,
 		  pMulticastAddrs->multicastAddr[0].bytes);
 
@@ -8290,7 +8332,7 @@ QDF_STATUS sme_set_tm_level(tHalHandle hHal, uint16_t newTMLevel, uint16_t
 		cds_message.type = WMA_SET_TM_LEVEL_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: Post Set TM Level MSG fail", __func__);
@@ -8616,6 +8658,140 @@ QDF_STATUS sme_update_roam_rssi_diff(tHalHandle hHal, uint8_t sessionId,
 	return status;
 }
 
+#ifdef WLAN_FEATURE_FILS_SK
+QDF_STATUS sme_update_fils_config(tHalHandle hal, uint8_t session_id,
+				  tCsrRoamProfile *src_profile)
+{
+	tpAniSirGlobal mac = PMAC_STRUCT(hal);
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	tpCsrNeighborRoamControlInfo neighbor_roam_info =
+			&mac->roam.neighborRoamInfo[session_id];
+
+	if (session_id >= CSR_ROAM_SESSION_MAX) {
+		sme_err("Invalid sme session id: %d", session_id);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (!src_profile) {
+		sme_err("src roam profile NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (!mac->roam.configParam.isFastRoamIniFeatureEnabled ||
+	    (neighbor_roam_info->neighborRoamState !=
+	     eCSR_NEIGHBOR_ROAM_STATE_CONNECTED)) {
+		sme_info("Fast roam is disabled or not connected(%d)",
+				neighbor_roam_info->neighborRoamState);
+		return QDF_STATUS_E_PERM;
+	}
+
+	csr_update_fils_config(mac, session_id, src_profile);
+	if (csr_roamIsRoamOffloadEnabled(mac)) {
+		sme_debug("Updating fils config to fw");
+		csr_roam_offload_scan(mac, session_id,
+				      ROAM_SCAN_OFFLOAD_UPDATE_CFG,
+				      REASON_FILS_PARAMS_CHANGED);
+	} else {
+		sme_info("LFR3 not enabled");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	return status;
+}
+
+void sme_send_hlp_ie_info(tHalHandle hal, uint8_t session_id,
+			  tCsrRoamProfile *profile, uint32_t if_addr)
+{
+	int i;
+	cds_msg_t msg;
+	QDF_STATUS status;
+	struct hlp_params *params;
+	tpAniSirGlobal mac = PMAC_STRUCT(hal);
+	tCsrRoamSession *session = CSR_GET_SESSION(mac, session_id);
+	tpCsrNeighborRoamControlInfo neighbor_roam_info =
+				&mac->roam.neighborRoamInfo[session_id];
+
+	if (!session) {
+		sme_err("session NULL");
+		return;
+	}
+
+	if (!mac->roam.configParam.isFastRoamIniFeatureEnabled ||
+	    (neighbor_roam_info->neighborRoamState !=
+	     eCSR_NEIGHBOR_ROAM_STATE_CONNECTED)) {
+		sme_debug("Fast roam is disabled or not connected(%d)",
+				neighbor_roam_info->neighborRoamState);
+		return;
+	}
+
+	params = qdf_mem_malloc(sizeof(*params));
+	if (!params) {
+		sme_err("Mem alloc for HLP IE fails");
+		return;
+	}
+	if ((profile->hlp_ie_len +
+	     SIR_IPV4_ADDR_LEN) > FILS_MAX_HLP_DATA_LEN) {
+		sme_err("HLP IE len exceeds %d",
+				profile->hlp_ie_len);
+		qdf_mem_free(params);
+		return;
+	}
+
+	params->vdev_id = session_id;
+	params->hlp_ie_len = profile->hlp_ie_len + SIR_IPV4_ADDR_LEN;
+
+	for (i = 0; i < SIR_IPV4_ADDR_LEN; i++)
+		params->hlp_ie[i] = (if_addr >> (i * 8)) & 0xFF;
+
+	qdf_mem_copy(params->hlp_ie + SIR_IPV4_ADDR_LEN,
+		     profile->hlp_ie, profile->hlp_ie_len);
+
+	msg.type = SIR_HAL_HLP_IE_INFO;
+	msg.reserved = 0;
+	msg.bodyptr = params;
+	status = sme_acquire_global_lock(&mac->sme);
+	if (status != QDF_STATUS_SUCCESS) {
+		sme_err("sme lock acquire fails");
+		qdf_mem_free(params);
+		return;
+	}
+
+	if (!QDF_IS_STATUS_SUCCESS
+			(cds_mq_post_message(QDF_MODULE_ID_WMA, &msg))) {
+		sme_err("Not able to post WMA_HLP_IE_INFO message to HAL");
+		sme_release_global_lock(&mac->sme);
+		qdf_mem_free(params);
+		return;
+	}
+
+	sme_release_global_lock(&mac->sme);
+}
+
+void sme_free_join_rsp_fils_params(tCsrRoamInfo *roam_info)
+{
+	struct fils_join_rsp_params *roam_fils_params;
+
+	if (!roam_info)
+		return;
+
+	roam_fils_params = roam_info->fils_join_rsp;
+	if (!roam_fils_params)
+		return;
+
+	if (roam_fils_params->fils_pmk)
+		qdf_mem_free(roam_fils_params->fils_pmk);
+
+	qdf_mem_free(roam_fils_params);
+
+	roam_info->fils_join_rsp = NULL;
+}
+
+#else
+inline void sme_send_hlp_ie_info(tHalHandle hal, uint8_t session_id,
+			  tCsrRoamProfile *profile, uint32_t if_addr)
+{}
+#endif
+
 /**
  * sme_update_fast_transition_enabled() - enable/disable Fast Transition
  *	support at runtime
@@ -8921,6 +9097,23 @@ QDF_STATUS sme_stop_roaming(tHalHandle hal, uint8_t session_id, uint8_t reason)
 	roam_info->last_sent_cmd = ROAM_SCAN_OFFLOAD_STOP;
 
 	return QDF_STATUS_SUCCESS;
+}
+
+void sme_indicate_disconnect_inprogress(tHalHandle hal, uint8_t session_id)
+{
+	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hal);
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	tCsrRoamSession *session;
+
+	status = sme_acquire_global_lock(&mac_ctx->sme);
+	if (QDF_IS_STATUS_SUCCESS(status)) {
+		if (CSR_IS_SESSION_VALID(mac_ctx, session_id)) {
+			session = CSR_GET_SESSION(mac_ctx, session_id);
+			if (session)
+				session->discon_in_progress = true;
+		}
+		sme_release_global_lock(&mac_ctx->sme);
+	}
 }
 
 /**
@@ -9878,7 +10071,55 @@ uint16_t sme_get_neighbor_scan_period(tHalHandle hHal, uint8_t sessionId)
 	       neighborScanPeriod;
 }
 
+/**
+ * sme_set_neighbor_scan_min_period() - Update neighbor_scan_min_period
+ *          This function is called through dynamic setConfig callback function
+ *          to configure neighbor_scan_min_period
+ *
+ * @hal - HAL handle for device
+ * @session_id - Session Identifier
+ * @neighbor_scan_min_period - neighbor scan min period
+ *
+ * Return - QDF_STATUS
+ */
+QDF_STATUS sme_set_neighbor_scan_min_period(tHalHandle hal,
+					    uint8_t session_id,
+					    const uint16_t
+					    neighbor_scan_min_period)
+{
+	tpAniSirGlobal pmac = PMAC_STRUCT(hal);
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	tCsrNeighborRoamConfig *p_neighbor_roam_config = NULL;
+	tpCsrNeighborRoamControlInfo p_neighbor_roam_info = NULL;
 
+	if (session_id >= CSR_ROAM_SESSION_MAX) {
+		sme_err("Invalid sme session id: %d", session_id);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	status = sme_acquire_global_lock(&pmac->sme);
+	if (QDF_IS_STATUS_SUCCESS(status)) {
+		p_neighbor_roam_config =
+				&pmac->roam.configParam.neighborRoamConfig;
+		p_neighbor_roam_info = &pmac->
+				roam.neighborRoamInfo[session_id];
+		sme_debug("LFR:set neighbor scan min period, old:%d, "
+				"new: %d, state: %s",
+				pmac->roam.configParam.neighborRoamConfig.
+				neighbor_scan_min_timer_period,
+				neighbor_scan_min_period,
+				mac_trace_get_neighbour_roam_state(pmac->roam.
+				neighborRoamInfo[session_id].
+				neighborRoamState));
+		p_neighbor_roam_config->neighbor_scan_min_timer_period =
+				neighbor_scan_min_period;
+		p_neighbor_roam_info->cfgParams.neighbor_scan_min_period =
+				neighbor_scan_min_period;
+		sme_release_global_lock(&pmac->sme);
+	}
+
+	return status;
+}
 
 /**
  * sme_get_roam_rssi_diff() - get Roam rssi diff
@@ -10343,7 +10584,7 @@ QDF_STATUS sme_update_fw_tdls_state(tHalHandle hHal, void *psmeTdlsParams,
 	/* serialize the req through MC thread */
 	cds_message.bodyptr = psmeTdlsParams;
 	cds_message.type = WMA_UPDATE_FW_TDLS_STATE;
-	qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 		status = QDF_STATUS_E_FAILURE;
 
@@ -10443,8 +10684,7 @@ QDF_STATUS sme_update_tdls_peer_state(tHalHandle hHal,
 	num = 0;
 	peer_chan_len = peerStateParams->peerCap.peerChanLen;
 
-	if (peer_chan_len >= 0 &&
-	    peer_chan_len <= SME_TDLS_MAX_SUPP_CHANNELS) {
+	if (peer_chan_len <= SME_TDLS_MAX_SUPP_CHANNELS) {
 		for (i = 0; i < peerStateParams->peerCap.peerChanLen; i++) {
 			chanId = peerStateParams->peerCap.peerChan[i];
 			if (csr_roam_is_channel_valid(pMac, chanId) &&
@@ -10484,7 +10724,7 @@ QDF_STATUS sme_update_tdls_peer_state(tHalHandle hHal,
 	cds_message.reserved = 0;
 	cds_message.bodyptr = pTdlsPeerStateParams;
 
-	qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 			FL("cds_mq_post_message failed "));
@@ -10570,7 +10810,7 @@ QDF_STATUS sme_send_tdls_chan_switch_req(tHalHandle hal,
 	cds_message.reserved = 0;
 	cds_message.bodyptr = chan_switch_params;
 
-	qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 			FL("Message Post failed status=%d"),
@@ -10618,6 +10858,101 @@ QDF_STATUS sme_get_link_speed(tHalHandle hHal, tSirLinkSpeedInfo *lsReq,
 	return status;
 }
 
+QDF_STATUS sme_get_peer_info(tHalHandle hal, struct sir_peer_info_req req,
+			void *context,
+			void (*callbackfn)(struct sir_peer_info_resp *param,
+						void *pcontext))
+{
+
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
+	tpAniSirGlobal mac = PMAC_STRUCT(hal);
+	cds_msg_t cds_message;
+
+	status = sme_acquire_global_lock(&mac->sme);
+	if (status == QDF_STATUS_SUCCESS) {
+		if (callbackfn == NULL) {
+			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+				"%s: Indication Call back is NULL",
+				__func__);
+			sme_release_global_lock(&mac->sme);
+			return QDF_STATUS_E_FAILURE;
+		}
+
+		mac->sme.pget_peer_info_ind_cb = callbackfn;
+		mac->sme.pget_peer_info_cb_context = context;
+
+		/* serialize the req through MC thread */
+		cds_message.bodyptr = qdf_mem_malloc(sizeof(req));
+		if (cds_message.bodyptr == NULL) {
+			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+				"%s: Memory allocation failed.", __func__);
+			sme_release_global_lock(&mac->sme);
+			return QDF_STATUS_E_NOMEM;
+		}
+		qdf_mem_copy(cds_message.bodyptr, &req, sizeof(req));
+		cds_message.type = WMA_GET_PEER_INFO;
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
+		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
+			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+				"%s: Post get peer info msg fail", __func__);
+			qdf_mem_free(cds_message.bodyptr);
+			status = QDF_STATUS_E_FAILURE;
+		}
+		sme_release_global_lock(&mac->sme);
+	}
+	return status;
+}
+
+QDF_STATUS sme_get_peer_info_ext(tHalHandle hal,
+		struct sir_peer_info_ext_req *req,
+		void *context,
+		void (*callbackfn)(struct sir_peer_info_ext_resp *param,
+			void *pcontext))
+{
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
+	tpAniSirGlobal mac = PMAC_STRUCT(hal);
+	cds_msg_t cds_message;
+
+	status = sme_acquire_global_lock(&mac->sme);
+	if (status == QDF_STATUS_SUCCESS) {
+		if (callbackfn == NULL) {
+			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+				"%s: Indication Call back is NULL",
+				__func__);
+			sme_release_global_lock(&mac->sme);
+			return QDF_STATUS_E_FAILURE;
+		}
+
+		mac->sme.pget_peer_info_ext_ind_cb = callbackfn;
+		mac->sme.pget_peer_info_ext_cb_context = context;
+
+		/* serialize the req through MC thread */
+		cds_message.bodyptr =
+			qdf_mem_malloc(sizeof(struct sir_peer_info_ext_req));
+		if (cds_message.bodyptr == NULL) {
+			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+				"%s: Memory allocation failed.", __func__);
+			sme_release_global_lock(&mac->sme);
+			return QDF_STATUS_E_NOMEM;
+		}
+		qdf_mem_copy(cds_message.bodyptr,
+				req,
+				sizeof(struct sir_peer_info_ext_req));
+		cds_message.type = WMA_GET_PEER_INFO_EXT;
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
+		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
+			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+				"%s: Post get rssi msg fail", __func__);
+			qdf_mem_free(cds_message.bodyptr);
+			status = QDF_STATUS_E_FAILURE;
+		}
+		sme_release_global_lock(&mac->sme);
+	}
+	return status;
+}
+
 /*
  * SME API to enable/disable WLAN driver initiated SSR
  */
@@ -10636,19 +10971,6 @@ void sme_update_enable_ssr(tHalHandle hHal, bool enableSSR)
 		WMA_SetEnableSSR(enableSSR);
 		sme_release_global_lock(&pMac->sme);
 	}
-}
-
-QDF_STATUS sme_check_ch_in_band(tpAniSirGlobal mac_ctx, uint8_t start_ch,
-		uint8_t ch_cnt)
-{
-	uint8_t i;
-
-	for (i = 0; i < ch_cnt; i++) {
-		if (QDF_STATUS_SUCCESS != csr_is_valid_channel(mac_ctx,
-					(start_ch + i*4)))
-			return QDF_STATUS_E_FAILURE;
-	}
-	return QDF_STATUS_SUCCESS;
 }
 
 /*convert the ini value to the ENUM used in csr and MAC for CB state*/
@@ -10738,7 +11060,7 @@ QDF_STATUS sme_ipa_offload_enable_disable(tHalHandle hal, uint8_t session_id,
 		msg.reserved = 0;
 		msg.bodyptr  = request_buf;
 		if (!QDF_IS_STATUS_SUCCESS(
-				cds_mq_post_message(CDS_MQ_ID_WMA, &msg))) {
+				cds_mq_post_message(QDF_MODULE_ID_WMA, &msg))) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				"Not able to post WMA_IPA_OFFLOAD_ENABLE_DISABLE message to WMA");
 			qdf_mem_free(request_buf);
@@ -10805,7 +11127,7 @@ QDF_STATUS sme_lphb_config_req(tHalHandle hHal, tSirLPHBReq *lphdReq,
 		cds_message.type = WMA_LPHB_CONF_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: Post Config LPHB MSG fail", __func__);
@@ -10936,7 +11258,7 @@ QDF_STATUS sme_enable_rmc(tHalHandle hHal, uint32_t sessionId)
 	if (QDF_IS_STATUS_SUCCESS(status)) {
 		cds_message.bodyptr = NULL;
 		cds_message.type = WMA_RMC_ENABLE_IND;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: failed to post message to WMA",
@@ -10968,7 +11290,7 @@ QDF_STATUS sme_disable_rmc(tHalHandle hHal, uint32_t sessionId)
 	if (QDF_IS_STATUS_SUCCESS(status)) {
 		cds_message.bodyptr = NULL;
 		cds_message.type = WMA_RMC_DISABLE_IND;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: failed to post message to WMA",
@@ -10998,7 +11320,7 @@ QDF_STATUS sme_send_rmc_action_period(tHalHandle hHal, uint32_t sessionId)
 	if (QDF_STATUS_SUCCESS == status) {
 		cds_message.bodyptr = NULL;
 		cds_message.type = WMA_RMC_ACTION_PERIOD_IND;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: failed to post message to WMA",
@@ -11052,7 +11374,7 @@ QDF_STATUS sme_request_ibss_peer_info(tHalHandle hHal, void *pUserData,
 		cds_message.bodyptr = pIbssInfoReqParams;
 		cds_message.reserved = 0;
 
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (QDF_STATUS_SUCCESS != qdf_status) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: Post WMA_GET_IBSS_PEER_INFO_REQ MSG failed",
@@ -11086,7 +11408,7 @@ QDF_STATUS sme_send_cesium_enable_ind(tHalHandle hHal, uint32_t sessionId)
 	if (QDF_STATUS_SUCCESS == status) {
 		cds_message.bodyptr = NULL;
 		cds_message.type = WMA_IBSS_CESIUM_ENABLE_IND;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: failed to post message to WMA",
@@ -11847,11 +12169,11 @@ void active_list_cmd_timeout_handle(void *userData)
 
 	if (mac_ctx->sme.enableSelfRecovery) {
 		sme_save_active_cmd_stats(hal);
-		cds_trigger_recovery();
+		cds_trigger_recovery(CDS_ACTIVE_LIST_TIMEOUT);
 	} else {
 		if (!mac_ctx->roam.configParam.enable_fatal_event &&
 		   !(cds_is_load_or_unload_in_progress() ||
-		    cds_is_driver_recovering()))
+		    cds_is_driver_recovering() || cds_is_driver_in_bad_state()))
 			QDF_BUG(0);
 	}
 }
@@ -12423,7 +12745,7 @@ QDF_STATUS sme_set_auto_shutdown_timer(tHalHandle hHal, uint32_t timer_val)
 		/* serialize the req through MC thread */
 		cds_message.bodyptr = auto_sh_cmd;
 		cds_message.type = WMA_SET_AUTO_SHUTDOWN_TIMER_REQ;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: Post Auto shutdown MSG fail", __func__);
@@ -12502,7 +12824,7 @@ QDF_STATUS sme_ch_avoid_update_req(tHalHandle hHal)
 		/* serialize the req through MC thread */
 		cds_message.bodyptr = cauReq;
 		cds_message.type = WMA_CH_AVOID_UPDATE_REQ;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: Post Ch Avoid Update MSG fail",
@@ -12658,8 +12980,6 @@ static QDF_STATUS sme_process_channel_change_resp(tpAniSirGlobal pMac,
 		proam_info.channelChangeRespEvent->sessionId = SessionId;
 		proam_info.channelChangeRespEvent->newChannelNumber =
 			pChnlParams->channelNumber;
-		proam_info.channelChangeRespEvent->secondaryChannelOffset =
-			pChnlParams->ch_width;
 
 		if (pChnlParams->status == QDF_STATUS_SUCCESS) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
@@ -12895,7 +13215,7 @@ QDF_STATUS sme_txpower_limit(tHalHandle hHal, tSirTxPowerLimit *psmetx)
 		cds_message.reserved = 0;
 		cds_message.bodyptr = tx_power_limit;
 
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: not able to post WMA_TX_POWER_LIMIT",
@@ -12951,7 +13271,7 @@ QDF_STATUS sme_ap_disable_intra_bss_fwd(tHalHandle hHal, uint8_t sessionId,
 		/* serialize the req through MC thread */
 		cds_message.bodyptr = pSapDisableIntraFwd;
 		cds_message.type = WMA_SET_SAP_INTRABSS_DIS;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			status = QDF_STATUS_E_FAILURE;
 			qdf_mem_free(pSapDisableIntraFwd);
@@ -13327,7 +13647,7 @@ QDF_STATUS sme_get_valid_channels_by_band(tHalHandle hHal,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	if ((wifiBand < WIFI_BAND_UNSPECIFIED) || (wifiBand >= WIFI_BAND_MAX)) {
+	if (wifiBand >= WIFI_BAND_MAX) {
 		sme_err("Invalid wifiBand: %d", wifiBand);
 		return QDF_STATUS_E_INVAL;
 	}
@@ -13440,7 +13760,7 @@ QDF_STATUS sme_ext_scan_get_capabilities(tHalHandle hHal,
 		cds_message.type = WMA_EXTSCAN_GET_CAPABILITIES_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			status = QDF_STATUS_E_FAILURE;
 
@@ -13472,7 +13792,7 @@ QDF_STATUS sme_ext_scan_start(tHalHandle hHal,
 		cds_message.type = WMA_EXTSCAN_START_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			status = QDF_STATUS_E_FAILURE;
 
@@ -13504,7 +13824,7 @@ QDF_STATUS sme_ext_scan_stop(tHalHandle hHal, tSirExtScanStopReqParams
 		cds_message.type = WMA_EXTSCAN_STOP_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			status = QDF_STATUS_E_FAILURE;
 		sme_release_global_lock(&pMac->sme);
@@ -13536,7 +13856,7 @@ QDF_STATUS sme_set_bss_hotlist(tHalHandle hHal,
 		cds_message.type = WMA_EXTSCAN_SET_BSSID_HOTLIST_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			status = QDF_STATUS_E_FAILURE;
 
@@ -13569,7 +13889,7 @@ QDF_STATUS sme_reset_bss_hotlist(tHalHandle hHal,
 		cds_message.type = WMA_EXTSCAN_RESET_BSSID_HOTLIST_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			status = QDF_STATUS_E_FAILURE;
 
@@ -13605,7 +13925,7 @@ QDF_STATUS sme_set_wisa_params(tHalHandle hal,
 	if (QDF_IS_STATUS_SUCCESS(status)) {
 		cds_message.bodyptr = cds_msg_wisa_params;
 		cds_message.type = WMA_SET_WISA_PARAMS;
-		status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		sme_release_global_lock(&mac->sme);
 	}
 	return status;
@@ -13635,7 +13955,7 @@ QDF_STATUS sme_set_significant_change(tHalHandle hHal,
 		cds_message.type = WMA_EXTSCAN_SET_SIGNF_CHANGE_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			status = QDF_STATUS_E_FAILURE;
 
@@ -13668,7 +13988,7 @@ QDF_STATUS sme_reset_significant_change(tHalHandle hHal,
 		cds_message.type = WMA_EXTSCAN_RESET_SIGNF_CHANGE_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			status = QDF_STATUS_E_FAILURE;
 
@@ -13701,7 +14021,7 @@ QDF_STATUS sme_get_cached_results(tHalHandle hHal,
 		cds_message.type = WMA_EXTSCAN_GET_CACHED_RESULTS_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			status = QDF_STATUS_E_FAILURE;
 
@@ -13777,7 +14097,7 @@ QDF_STATUS sme_set_epno_list(tHalHandle hal,
 	/* Serialize the req through MC thread */
 	cds_message.bodyptr = req_msg;
 	cds_message.type    = WMA_SET_EPNO_LIST_REQ;
-	status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		sme_err("cds_mq_post_message failed!(err=%d)",
 			status);
@@ -13844,7 +14164,7 @@ QDF_STATUS sme_set_passpoint_list(tHalHandle hal,
 	/* Serialize the req through MC thread */
 	cds_message.bodyptr = req_msg;
 	cds_message.type    = WMA_SET_PASSPOINT_LIST_REQ;
-	status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		sme_err("cds_mq_post_message failed!(err=%d)",
 			status);
@@ -13891,7 +14211,7 @@ QDF_STATUS sme_reset_passpoint_list(tHalHandle hal,
 	/* Serialize the req through MC thread */
 	cds_message.bodyptr = req_msg;
 	cds_message.type    = WMA_RESET_PASSPOINT_LIST_REQ;
-	status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		sme_err("cds_mq_post_message failed!(err=%d)",
 			status);
@@ -13945,6 +14265,12 @@ QDF_STATUS sme_ll_stats_clear_req(tHalHandle hHal,
 		  pclearStatsReq->statsClearReqMask);
 	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
 		  "stopReq = %u", pclearStatsReq->stopReq);
+	if (!sme_is_session_id_valid(hHal, pclearStatsReq->staId)) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			  "%s: invalid staId %d",
+			  __func__, pclearStatsReq->staId);
+		return QDF_STATUS_E_INVAL;
+	}
 
 	clear_stats_req = qdf_mem_malloc(sizeof(*clear_stats_req));
 
@@ -13963,7 +14289,7 @@ QDF_STATUS sme_ll_stats_clear_req(tHalHandle hHal,
 		cds_message.type = WMA_LINK_LAYER_STATS_CLEAR_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: not able to post WMA_LL_STATS_CLEAR_REQ",
@@ -14023,7 +14349,7 @@ QDF_STATUS sme_ll_stats_set_req(tHalHandle hHal, tSirLLStatsSetReq
 		cds_message.type = WMA_LINK_LAYER_STATS_SET_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: not able to post WMA_LL_STATS_SET_REQ",
@@ -14076,7 +14402,7 @@ QDF_STATUS sme_ll_stats_get_req(tHalHandle hHal, tSirLLStatsGetReq
 		cds_message.type = WMA_LINK_LAYER_STATS_GET_REQ;
 		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
 				 NO_SESSION, cds_message.type));
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  "%s: not able to post WMA_LL_STATS_GET_REQ",
@@ -14454,7 +14780,7 @@ QDF_STATUS sme_get_temperature(tHalHandle hHal,
 		/* serialize the req through MC thread */
 		cds_message.bodyptr = NULL;
 		cds_message.type = WMA_GET_TEMPERATURE_REQ;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  FL("Post Get Temperature msg fail"));
@@ -14486,7 +14812,7 @@ QDF_STATUS sme_set_scanning_mac_oui(tHalHandle hHal, tSirScanMacOui
 		/* Serialize the req through MC thread */
 		cds_message.bodyptr = pScanMacOui;
 		cds_message.type = WMA_SET_SCAN_MAC_OUI_REQ;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				  FL("Msg post Set Scan Mac OUI failed"));
@@ -14535,7 +14861,7 @@ QDF_STATUS sme_set_dhcp_srv_offload(tHalHandle hHal,
 			    (cds_mq_post_message(QDF_MODULE_ID_WMA,
 						&cds_message))) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
-				  "%s: Not able to post WMA_SET_DHCP_SERVER_OFFLOAD_CMD to WMA!",
+				  "%s:WMA_SET_DHCP_SERVER_OFFLOAD_CMD failed",
 				  __func__);
 			qdf_mem_free(pSmeDhcpSrvInfo);
 			status = QDF_STATUS_E_FAILURE;
@@ -14585,7 +14911,7 @@ QDF_STATUS sme_set_led_flashing(tHalHandle hHal, uint8_t type,
 		/* Serialize the req through MC thread */
 		cds_message.bodyptr = ledflashing;
 		cds_message.type = WMA_LED_FLASHING_REQ;
-		qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			status = QDF_STATUS_E_FAILURE;
 		sme_release_global_lock(&pMac->sme);
@@ -14836,6 +15162,61 @@ QDF_STATUS sme_configure_modulated_dtim(tHalHandle h_hal, uint8_t session_id,
 }
 
 /**
+ * sme_override_listen_interval() - function to override static LI
+ * @h_hal: SME API to override listen interval
+ * @session_id: session ID
+ * @override_li: new LI value passed by user
+ *
+ * This function override (enable/disable) static a.k.a ini based LI
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS sme_override_listen_interval(tHalHandle h_hal, uint8_t session_id,
+					uint32_t override_li)
+{
+	cds_msg_t msg;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	tpAniSirGlobal mac  = PMAC_STRUCT(h_hal);
+	wma_cli_set_cmd_t *iwcmd;
+
+	iwcmd = qdf_mem_malloc(sizeof(*iwcmd));
+	if (!iwcmd) {
+		QDF_TRACE(QDF_MODULE_ID_SME,
+			  QDF_TRACE_LEVEL_FATAL,
+			  "%s: qdf_mem_malloc failed", __func__);
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	status = sme_acquire_global_lock(&mac->sme);
+	if (status == QDF_STATUS_SUCCESS) {
+		iwcmd->param_value = override_li;
+		iwcmd->param_vdev_id = session_id;
+		iwcmd->param_id = GEN_PARAM_LISTEN_INTERVAL;
+		iwcmd->param_vp_dev = GEN_CMD;
+		msg.type = WMA_CLI_SET_CMD;
+		msg.reserved = 0;
+		msg.bodyptr = (void *)iwcmd;
+
+		if (!QDF_IS_STATUS_SUCCESS(
+			    cds_mq_post_message(QDF_MODULE_ID_WMA, &msg))) {
+			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+				  "%s: Can't post GEN_PARAM_LISTEN_INTERVAL",
+				  __func__);
+			qdf_mem_free(iwcmd);
+			status = QDF_STATUS_E_FAILURE;
+		}
+		sme_release_global_lock(&mac->sme);
+	} else {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			  "%s: sme_acquire_global_lock error!",
+			  __func__);
+		qdf_mem_free(iwcmd);
+	}
+
+	return status;
+}
+
+/*
  * sme_wifi_start_logger() - Send the start/stop logging command to WMA
  * to either start/stop logging
  * @hal: HAL context
@@ -14879,7 +15260,7 @@ QDF_STATUS sme_wifi_start_logger(tHalHandle hal,
 	/* Serialize the req through MC thread */
 	cds_message.bodyptr = req_msg;
 	cds_message.type    = SIR_HAL_START_STOP_LOGGING;
-	status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		sme_err("cds_mq_post_message failed!(err=%d)", status);
 		qdf_mem_free(req_msg);
@@ -14933,7 +15314,7 @@ QDF_STATUS sme_send_flush_logs_cmd_to_fw(tpAniSirGlobal mac)
 	/* Serialize the req through MC thread */
 	message.bodyptr = NULL;
 	message.type    = SIR_HAL_FLUSH_LOG_TO_FW;
-	status = cds_mq_post_message(CDS_MQ_ID_WMA, &message);
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &message);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		sme_err("cds_mq_post_message failed!(err=%d)", status);
 		status = QDF_STATUS_E_FAILURE;
@@ -14961,7 +15342,7 @@ QDF_STATUS sme_enable_uapsd_for_ac(void *cds_ctx, uint8_t sta_id,
 				   sme_ac_enum_type ac, uint8_t tid,
 				   uint8_t pri, uint32_t srvc_int,
 				   uint32_t sus_int,
-				   sme_tspec_dir_type dir,
+				   sme_qos_wmm_dir_type dir,
 				   uint8_t psb, uint32_t sessionId,
 				   uint32_t delay_interval)
 {
@@ -15299,7 +15680,7 @@ QDF_STATUS sme_set_rssi_monitoring(tHalHandle hal,
 	/* Serialize the req through MC thread */
 	cds_message.bodyptr = req_msg;
 	cds_message.type    = WMA_SET_RSSI_MONITOR_REQ;
-	status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		sme_err("cds_mq_post_message failed!(err=%d)", status);
 		qdf_mem_free(req_msg);
@@ -15429,7 +15810,7 @@ QDF_STATUS sme_pdev_set_pcl(tHalHandle hal,
 	/* Serialize the req through MC thread */
 	cds_message.bodyptr = req_msg;
 	cds_message.type    = SIR_HAL_PDEV_SET_PCL_TO_FW;
-	status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		sme_err("cds_mq_post_message failed!(err=%d)", status);
 		qdf_mem_free(req_msg);
@@ -15625,7 +16006,7 @@ QDF_STATUS sme_gateway_param_update(tHalHandle Hal,
 	cds_message.type = WMA_GW_PARAM_UPDATE_REQ;
 	cds_message.reserved = 0;
 	cds_message.bodyptr = request_buf;
-	qdf_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 			"Not able to post WMA_GW_PARAM_UPDATE_REQ message to HAL");
@@ -15863,8 +16244,11 @@ void sme_update_tgt_services(tHalHandle hal, struct wma_tgt_services *cfg)
 	mac_ctx->lteCoexAntShare = cfg->lte_coex_ant_share;
 	mac_ctx->beacon_offload = cfg->beacon_offload;
 	mac_ctx->pmf_offload = cfg->pmf_offload;
+	mac_ctx->is_fils_roaming_supported =
+				cfg->is_fils_roaming_supported;
 	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
-		FL("mac_ctx->pmf_offload: %d"), mac_ctx->pmf_offload);
+		  FL("mac_ctx->pmf_offload: %d fils_roam support %d"),
+		  mac_ctx->pmf_offload, mac_ctx->is_fils_roaming_supported);
 
 }
 
@@ -16801,24 +17185,31 @@ QDF_STATUS sme_update_sta_roam_policy(tHalHandle hal_handle,
 {
 	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hal_handle);
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	tSmeConfigParams sme_config;
+	tSmeConfigParams *sme_config;
 
 	if (!mac_ctx) {
 		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_FATAL,
 				"%s: mac_ctx is null", __func__);
 		return QDF_STATUS_E_FAILURE;
 	}
-	qdf_mem_zero(&sme_config, sizeof(sme_config));
-	sme_get_config_param(hal_handle, &sme_config);
 
-	sme_config.csrConfig.sta_roam_policy_params.dfs_mode =
+	sme_config = qdf_mem_malloc(sizeof(*sme_config));
+	if (!sme_config) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			FL("failed to allocate memory for sme_config"));
+		return QDF_STATUS_E_FAILURE;
+	}
+	qdf_mem_zero(sme_config, sizeof(*sme_config));
+	sme_get_config_param(hal_handle, sme_config);
+
+	sme_config->csrConfig.sta_roam_policy_params.dfs_mode =
 		dfs_mode;
-	sme_config.csrConfig.sta_roam_policy_params.skip_unsafe_channels =
+	sme_config->csrConfig.sta_roam_policy_params.skip_unsafe_channels =
 		skip_unsafe_channels;
-	sme_config.csrConfig.sta_roam_policy_params.sap_operating_band =
+	sme_config->csrConfig.sta_roam_policy_params.sap_operating_band =
 		sap_operating_band;
 
-	sme_update_config(hal_handle, &sme_config);
+	sme_update_config(hal_handle, sme_config);
 
 	status = csr_update_channel_list(mac_ctx);
 	if (QDF_STATUS_SUCCESS != status) {
@@ -16829,6 +17220,8 @@ QDF_STATUS sme_update_sta_roam_policy(tHalHandle hal_handle,
 		csr_roam_offload_scan(mac_ctx, session_id,
 				ROAM_SCAN_OFFLOAD_UPDATE_CFG,
 				REASON_ROAM_SCAN_STA_ROAM_POLICY_CHANGED);
+
+	qdf_mem_free(sme_config);
 	return status;
 }
 
@@ -17445,7 +17838,8 @@ free_scan_flter:
 
 QDF_STATUS sme_get_beacon_frm(tHalHandle hal, tCsrRoamProfile *profile,
 				const tSirMacAddr bssid,
-				uint8_t **frame_buf, uint32_t *frame_len)
+				uint8_t **frame_buf, uint32_t *frame_len,
+				int *channel)
 {
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	tScanResultHandle result_handle = NULL;
@@ -17465,6 +17859,7 @@ QDF_STATUS sme_get_beacon_frm(tHalHandle hal, tCsrRoamProfile *profile,
 						profile, scan_filter);
 	if (QDF_STATUS_SUCCESS != status) {
 		sme_err("prepare_filter failed");
+		status = QDF_STATUS_E_FAULT;
 		goto free_scan_flter;
 	}
 
@@ -17485,6 +17880,7 @@ QDF_STATUS sme_get_beacon_frm(tHalHandle hal, tCsrRoamProfile *profile,
 	status = csr_scan_get_result(mac_ctx, scan_filter, &result_handle);
 	if (QDF_STATUS_SUCCESS != status) {
 		sme_err("parse_scan_result failed");
+		status = QDF_STATUS_E_FAULT;
 		goto free_scan_flter;
 	}
 
@@ -17509,7 +17905,8 @@ QDF_STATUS sme_get_beacon_frm(tHalHandle hal, tCsrRoamProfile *profile,
 	 */
 	ie_len = bss_descp->length + sizeof(bss_descp->length)
 		- (uint16_t)(offsetof(tSirBssDescription, ieFields[0]));
-	sme_debug("found bss_descriptor ie_len: %d", ie_len);
+	sme_debug("found bss_descriptor ie_len: %d channel %d",
+					ie_len, bss_descp->channelId);
 
 	/* include mac header and fixed params along with IEs in frame */
 	*frame_len = SIR_MAC_HDR_LEN_3A + SIR_MAC_B_PR_SSID_OFFSET + ie_len;
@@ -17522,6 +17919,8 @@ QDF_STATUS sme_get_beacon_frm(tHalHandle hal, tCsrRoamProfile *profile,
 	qdf_mem_zero(*frame_buf, *frame_len);
 	sme_prepare_beacon_from_bss_descp(*frame_buf, bss_descp, bssid, ie_len);
 
+	if (!*channel)
+		*channel = bss_descp->channelId;
 free_scan_flter:
 	/* free scan filter and exit */
 	if (scan_filter) {
@@ -17608,6 +18007,66 @@ QDF_STATUS sme_get_nud_debug_stats(tHalHandle hal,
 	return QDF_STATUS_SUCCESS;
 }
 
+QDF_STATUS sme_set_del_pmkid_cache(tHalHandle hal, uint8_t session_id,
+				   tPmkidCacheInfo *pmk_cache_info,
+				   bool is_add)
+{
+	wmi_pmk_cache *pmk_cache = NULL;
+	cds_msg_t msg;
+
+	if (!pmk_cache_info)
+		goto send_flush_cmd;
+
+	pmk_cache = qdf_mem_malloc(sizeof(*pmk_cache));
+	if (!pmk_cache) {
+		sme_err("Memory allocation failure");
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	if (!pmk_cache_info->ssid_len) {
+		pmk_cache->cat_flag = WMI_PMK_CACHE_CAT_FLAG_BSSID;
+		WMI_CHAR_ARRAY_TO_MAC_ADDR(pmk_cache_info->BSSID.bytes,
+				&pmk_cache->bssid);
+	} else {
+		pmk_cache->cat_flag = WMI_PMK_CACHE_CAT_FLAG_SSID_CACHE_ID;
+		pmk_cache->ssid.ssid_len = pmk_cache_info->ssid_len;
+		qdf_mem_copy(pmk_cache->ssid.ssid,
+			     pmk_cache_info->ssid,
+			     pmk_cache->ssid.ssid_len);
+	}
+	pmk_cache->cache_id = (uint32_t) (pmk_cache_info->cache_id[0] << 8 |
+					pmk_cache_info->cache_id[1]);
+
+	if (is_add)
+		pmk_cache->action_flag = WMI_PMK_CACHE_ACTION_FLAG_ADD_ENTRY;
+	else
+		pmk_cache->action_flag = WMI_PMK_CACHE_ACTION_FLAG_DEL_ENTRY;
+
+	pmk_cache->pmkid_len = CSR_RSN_PMKID_SIZE;
+	qdf_mem_copy(pmk_cache->pmkid, pmk_cache_info->PMKID,
+		     CSR_RSN_PMKID_SIZE);
+
+	pmk_cache->pmk_len = pmk_cache_info->pmk_len;
+	qdf_mem_copy(pmk_cache->pmk, pmk_cache_info->pmk,
+		     pmk_cache->pmk_len);
+
+send_flush_cmd:
+	msg.type = SIR_HAL_SET_DEL_PMKID_CACHE;
+	msg.reserved = session_id;
+	msg.bodyptr = pmk_cache;
+	if (QDF_STATUS_SUCCESS !=
+	    cds_mq_post_message(QDF_MODULE_ID_WMA, &msg)) {
+		sme_err("Not able to post message to WDA");
+
+		if (pmk_cache)
+			qdf_mem_free(pmk_cache);
+
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
+
 /**
  * sme_delete_all_tdls_peers(): send request to delete tdls peers
  * @hal: handler for HAL
@@ -17617,7 +18076,8 @@ QDF_STATUS sme_get_nud_debug_stats(tHalHandle hal,
  *
  * Return: QDF_STATUS
  */
-QDF_STATUS sme_delete_all_tdls_peers(tHalHandle hal, uint8_t session_id)
+QDF_STATUS sme_delete_all_tdls_peers(tHalHandle hal, uint8_t session_id,
+		bool disable_tdls_state)
 {
 	struct sir_del_all_tdls_peers *msg;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
@@ -17637,6 +18097,8 @@ QDF_STATUS sme_delete_all_tdls_peers(tHalHandle hal, uint8_t session_id)
 
 	qdf_mem_copy(msg->bssid.bytes, session->connectedProfile.bssid.bytes,
 		     sizeof(struct qdf_mac_addr));
+
+	msg->disable_tdls_state = disable_tdls_state;
 
 	status = cds_send_mb_message_to_mac(msg);
 
@@ -17834,7 +18296,7 @@ QDF_STATUS sme_get_chain_rssi(tHalHandle phal,
 		/* serialize the req through MC thread */
 		cds_message.bodyptr = req_msg;
 		cds_message.type    = SIR_HAL_GET_CHAIN_RSSI_REQ;
-		cds_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+		cds_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 		if (!QDF_IS_STATUS_SUCCESS(cds_status)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 				FL("Post Get Chain Rssi msg fail"));
@@ -17891,7 +18353,7 @@ QDF_STATUS sme_set_reorder_timeout(tHalHandle hal,
 		/* Serialize the req through MC thread */
 		cds_msg.bodyptr = reorder_timeout;
 		cds_msg.type = SIR_HAL_SET_REORDER_TIMEOUT_CMDID;
-		cds_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_msg);
+		cds_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_msg);
 		sme_release_global_lock(&mac_ctx->sme);
 
 		if (!QDF_IS_STATUS_SUCCESS(cds_status)) {
@@ -17932,7 +18394,7 @@ QDF_STATUS sme_set_rx_set_blocksize(tHalHandle hal,
 		/* Serialize the req through MC thread */
 		cds_msg.bodyptr = rx_blocksize;
 		cds_msg.type = SIR_HAL_SET_RX_BLOCKSIZE_CMDID;
-		cds_status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_msg);
+		cds_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_msg);
 		sme_release_global_lock(&mac_ctx->sme);
 
 		if (!QDF_IS_STATUS_SUCCESS(cds_status)) {
@@ -17992,11 +18454,51 @@ QDF_STATUS sme_ipa_uc_stat_request(tHalHandle hal, uint32_t vdev_id,
 	iwcmd->param_id = param_id;
 	iwcmd->param_vp_dev = req_cat;
 	iwcmd->param_value =  param_val;
-
 	wma_ipa_uc_stat_request(iwcmd);
 	qdf_mem_free(iwcmd);
 
 	return status;
+}
+
+
+int sme_cli_set_command(int vdev_id, int param_id, int sval, int vpdev)
+{
+	return wma_cli_set_command(vdev_id, param_id, sval, vpdev);
+}
+
+void sme_set_chan_info_callback(tHalHandle hal_handle,
+			void (*callback)(struct scan_chan_info *chan_info))
+{
+	tpAniSirGlobal mac = PMAC_STRUCT(hal_handle);
+
+	mac->chan_info_cb = callback;
+}
+
+/**
+ * sme_set_vc_mode_config() - Set voltage corner config to FW
+ * @bitmap:	Bitmap that referes to voltage corner config with
+ * different phymode and bw configuration
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS sme_set_vc_mode_config(uint32_t vc_bitmap)
+{
+	void *wma_handle;
+
+	wma_handle = cds_get_context(QDF_MODULE_ID_WMA);
+	if (!wma_handle) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+				"wma_handle is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+	if (QDF_STATUS_SUCCESS !=
+		wma_set_vc_mode_config(wma_handle, vc_bitmap)) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			"%s: Failed to set Voltage Control config to FW",
+			__func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+	return QDF_STATUS_SUCCESS;
 }
 
 /**
@@ -18011,4 +18513,40 @@ QDF_STATUS sme_set_bmiss_bcnt(uint32_t vdev_id, uint32_t first_cnt,
 		uint32_t final_cnt)
 {
 	return wma_config_bmiss_bcnt_params(vdev_id, first_cnt, final_cnt);
+}
+
+void sme_display_disconnect_stats(tHalHandle hal, uint8_t session_id)
+{
+	tCsrRoamSession *session;
+	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hal);
+
+	if (!CSR_IS_SESSION_VALID(mac_ctx, session_id)) {
+		sme_err("%s Invalid session id: %d", __func__, session_id);
+		return;
+	}
+
+	session = CSR_GET_SESSION(mac_ctx, session_id);
+	if (!session) {
+		sme_err("%s Failed to get session for id: %d",
+			__func__, session_id);
+		return;
+	}
+
+	sme_debug("Total No. of Disconnections: %d",
+		  session->disconnect_stats.disconnection_cnt);
+
+	sme_debug("No. of Diconnects Triggered by Application: %d",
+		  session->disconnect_stats.disconnection_by_app);
+
+	sme_debug("No. of Disassoc Sent by Peer: %d",
+		  session->disconnect_stats.disassoc_by_peer);
+
+	sme_debug("No. of Deauth Sent by Peer: %d",
+		  session->disconnect_stats.deauth_by_peer);
+
+	sme_debug("No. of Disconnections due to Beacon Miss: %d",
+		  session->disconnect_stats.bmiss);
+
+	sme_debug("No. of Disconnections due to Peer Kickout: %d",
+		  session->disconnect_stats.peer_kickout);
 }

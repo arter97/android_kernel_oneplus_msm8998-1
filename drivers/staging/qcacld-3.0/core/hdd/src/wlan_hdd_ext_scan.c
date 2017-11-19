@@ -456,7 +456,7 @@ wlan_hdd_cfg80211_extscan_cached_results_ind(void *ctx,
 	if (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_REQUEST_ID,
 		data->request_id) ||
 	    nla_put_u32(skb,
-		QCA_WLAN_VENDOR_ATTR_EXTSCAN_NUM_RESULTS_AVAILABLE,
+		QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_NUM_RESULTS_AVAILABLE,
 		data->num_scan_ids) ||
 	    nla_put_u8(skb,
 		QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_SCAN_RESULT_MORE_DATA,
@@ -499,7 +499,7 @@ wlan_hdd_cfg80211_extscan_cached_results_ind(void *ctx,
 				QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_BUCKETS_SCANNED,
 				result->buckets_scanned) ||
 			    nla_put_u32(skb,
-				QCA_WLAN_VENDOR_ATTR_EXTSCAN_NUM_RESULTS_AVAILABLE,
+				QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_NUM_RESULTS_AVAILABLE,
 				result->num_results)) {
 				hdd_err("put fail");
 				goto fail;
@@ -613,7 +613,7 @@ wlan_hdd_cfg80211_extscan_hotlist_match_ind(void *ctx,
 		QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_REQUEST_ID,
 		data->requestId) ||
 	    nla_put_u32(skb,
-		QCA_WLAN_VENDOR_ATTR_EXTSCAN_NUM_RESULTS_AVAILABLE,
+		QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_NUM_RESULTS_AVAILABLE,
 		data->numOfAps)) {
 		hdd_err("put fail");
 		goto fail;
@@ -743,7 +743,7 @@ wlan_hdd_cfg80211_extscan_signif_wifi_change_results_ind(
 		QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_REQUEST_ID,
 		pData->requestId) ||
 	    nla_put_u32(skb,
-		QCA_WLAN_VENDOR_ATTR_EXTSCAN_NUM_RESULTS_AVAILABLE,
+		QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_NUM_RESULTS_AVAILABLE,
 		pData->numResults)) {
 		hdd_err("put fail");
 		goto fail;
@@ -989,7 +989,7 @@ wlan_hdd_cfg80211_extscan_scan_res_available_event(
 		QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_REQUEST_ID,
 		pData->requestId) ||
 	    nla_put_u32(skb,
-		QCA_WLAN_VENDOR_ATTR_EXTSCAN_NUM_RESULTS_AVAILABLE,
+		QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_NUM_RESULTS_AVAILABLE,
 		pData->numResultsAvailable)) {
 		hdd_err("nla put fail");
 		goto nla_put_failure;
@@ -1162,7 +1162,7 @@ wlan_hdd_cfg80211_extscan_epno_match_found(void *ctx,
 	if (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_REQUEST_ID,
 		data->request_id) ||
 	    nla_put_u32(skb,
-		QCA_WLAN_VENDOR_ATTR_EXTSCAN_NUM_RESULTS_AVAILABLE,
+		QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_NUM_RESULTS_AVAILABLE,
 		data->num_results) ||
 	    nla_put_u8(skb,
 		QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_SCAN_RESULT_MORE_DATA,
@@ -1347,7 +1347,7 @@ wlan_hdd_cfg80211_extscan_generic_rsp
 	ENTER();
 
 	if (wlan_hdd_validate_context(hdd_ctx) || !response) {
-		hdd_err("HDD context is not valid or response(%p) is null",
+		hdd_err("HDD context is not valid or response(%pK) is null",
 		       response);
 		return;
 	}
@@ -1670,14 +1670,14 @@ static int __wlan_hdd_cfg80211_extscan_get_capabilities(struct wiphy *wiphy,
 	}
 
 	/* Parse and fetch request Id */
-	if (!tb[QCA_WLAN_VENDOR_ATTR_PNO_CONFIG_REQUEST_ID]) {
+	if (!tb[QCA_WLAN_VENDOR_ATTR_EXTSCAN_SUBCMD_CONFIG_PARAM_REQUEST_ID]) {
 		hdd_err("attr request id failed");
 		goto fail;
 	}
 
 	pReqMsg->requestId =
 		nla_get_u32(tb
-		 [QCA_WLAN_VENDOR_ATTR_PNO_CONFIG_REQUEST_ID]);
+		 [QCA_WLAN_VENDOR_ATTR_EXTSCAN_SUBCMD_CONFIG_PARAM_REQUEST_ID]);
 	pReqMsg->sessionId = pAdapter->sessionId;
 	hdd_debug("Req Id %d Session Id %d",
 		pReqMsg->requestId, pReqMsg->sessionId);
@@ -3145,6 +3145,11 @@ __wlan_hdd_cfg80211_extscan_start(struct wiphy *wiphy,
 		return -EPERM;
 	}
 
+	if (QDF_NDI_MODE == pAdapter->device_mode) {
+		hdd_err("Command not allowed for NDI interface");
+		return -EPERM;
+	}
+
 	retval = wlan_hdd_validate_context(pHddCtx);
 	if (0 != retval)
 		return -EINVAL;
@@ -3888,12 +3893,12 @@ static int __wlan_hdd_cfg80211_set_epno_list(struct wiphy *wiphy,
 	req_msg->num_networks = num_networks;
 
 	/* Parse and fetch request Id */
-	if (!tb[QCA_WLAN_VENDOR_ATTR_EXTSCAN_SUBCMD_CONFIG_PARAM_REQUEST_ID]) {
+	if (!tb[QCA_WLAN_VENDOR_ATTR_PNO_CONFIG_REQUEST_ID]) {
 		hdd_err("attr request id failed");
 		goto fail;
 	}
 	req_msg->request_id = nla_get_u32(
-	    tb[QCA_WLAN_VENDOR_ATTR_EXTSCAN_SUBCMD_CONFIG_PARAM_REQUEST_ID]);
+	    tb[QCA_WLAN_VENDOR_ATTR_PNO_CONFIG_REQUEST_ID]);
 	hdd_debug("Req Id %u", req_msg->request_id);
 
 	req_msg->session_id = adapter->sessionId;

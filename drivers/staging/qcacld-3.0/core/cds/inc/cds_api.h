@@ -63,15 +63,19 @@
  * CDS_DRIVER_STATE_LOADING: Driver probe is in progress.
  * CDS_DRIVER_STATE_UNLOADING: Driver remove is in progress.
  * CDS_DRIVER_STATE_RECOVERING: Recovery in progress.
+ * CDS_DRIVER_STATE_BAD: Driver in bad state.
+ * CDS_DRIVER_STATE_FW_READY:
  * CDS_DRIVER_STATE_MODULE_STOPPING: Module stop in progress.
  */
 enum cds_driver_state {
-	CDS_DRIVER_STATE_UNINITIALIZED		= 0,
-	CDS_DRIVER_STATE_LOADED			= BIT(0),
-	CDS_DRIVER_STATE_LOADING		= BIT(1),
-	CDS_DRIVER_STATE_UNLOADING		= BIT(2),
-	CDS_DRIVER_STATE_RECOVERING		= BIT(3),
-	CDS_DRIVER_STATE_MODULE_STOPPING	= BIT(4),
+	CDS_DRIVER_STATE_UNINITIALIZED	 = 0,
+	CDS_DRIVER_STATE_LOADED		 = BIT(0),
+	CDS_DRIVER_STATE_LOADING	 = BIT(1),
+	CDS_DRIVER_STATE_UNLOADING	 = BIT(2),
+	CDS_DRIVER_STATE_RECOVERING	 = BIT(3),
+	CDS_DRIVER_STATE_BAD		 = BIT(4),
+	CDS_DRIVER_STATE_FW_READY	 = BIT(5),
+	CDS_DRIVER_STATE_MODULE_STOPPING = BIT(6),
 };
 
 #define __CDS_IS_DRIVER_STATE(_state, _mask) (((_state) & (_mask)) == (_mask))
@@ -113,6 +117,7 @@ struct cds_dp_cbacks {
 	void (*hdd_en_lro_in_cc_cb)(struct hdd_context_s *);
 	void (*hdd_disble_lro_in_cc_cb)(struct hdd_context_s *);
 	void (*hdd_set_rx_mode_rps_cb)(struct hdd_context_s *, void *, bool);
+	void (*hdd_ipa_set_mcc_mode_cb)(bool);
 };
 
 void cds_set_driver_state(enum cds_driver_state);
@@ -188,6 +193,18 @@ static inline bool cds_is_driver_recovering(void)
 }
 
 /**
+ * cds_is_driver_in_bad_state() - is driver in bad state
+ *
+ * Return: true if driver is in bad state and false otherwise.
+ */
+static inline bool cds_is_driver_in_bad_state(void)
+{
+	enum cds_driver_state state = cds_get_driver_state();
+
+	return __CDS_IS_DRIVER_STATE(state, CDS_DRIVER_STATE_BAD);
+}
+
+/**
  * cds_is_load_or_unload_in_progress() - Is driver load OR unload in progress
  *
  * Return: true if driver is loading OR unloading and false otherwise.
@@ -245,6 +262,18 @@ static inline bool cds_is_fw_down(void)
 }
 
 /**
+ * cds_is_target_ready() - Is target is in ready state
+ *
+ * Return: true if target is in ready state and false otherwise.
+ */
+static inline bool cds_is_target_ready(void)
+{
+	enum cds_driver_state state = cds_get_driver_state();
+
+	return __CDS_IS_DRIVER_STATE(state, CDS_DRIVER_STATE_FW_READY);
+}
+
+/**
  * cds_set_recovery_in_progress() - Set recovery in progress
  * @value: value to set
  *
@@ -256,6 +285,34 @@ static inline void cds_set_recovery_in_progress(uint8_t value)
 		cds_set_driver_state(CDS_DRIVER_STATE_RECOVERING);
 	else
 		cds_clear_driver_state(CDS_DRIVER_STATE_RECOVERING);
+}
+
+/**
+ * cds_set_driver_in_bad_state() - Set driver state
+ * @value: value to set
+ *
+ * Return: none
+ */
+static inline void cds_set_driver_in_bad_state(uint8_t value)
+{
+	if (value)
+		cds_set_driver_state(CDS_DRIVER_STATE_BAD);
+	else
+		cds_clear_driver_state(CDS_DRIVER_STATE_BAD);
+}
+
+/**
+ * cds_set_target_ready() - Set target ready state
+ * @value: value to set
+ *
+ * Return: none
+ */
+static inline void cds_set_target_ready(uint8_t value)
+{
+	if (value)
+		cds_set_driver_state(CDS_DRIVER_STATE_FW_READY);
+	else
+		cds_clear_driver_state(CDS_DRIVER_STATE_FW_READY);
 }
 
 /**
@@ -366,7 +423,28 @@ bool cds_is_packet_log_enabled(void);
 
 uint64_t cds_get_monotonic_boottime(void);
 
-void cds_trigger_recovery(void);
+/**
+ * cds_get_recovery_reason() - get self recovery reason
+ * @reason: cds hang reason
+ *
+ * Return: None
+ */
+void cds_get_recovery_reason(enum cds_hang_reason *reason);
+
+/**
+ * cds_reset_recovery_reason() - reset the reason to unspecified
+ *
+ * Return: None
+ */
+void cds_reset_recovery_reason(void);
+
+/**
+ * cds_trigger_recovery() - trigger self recovery
+ * @reason: recovery reason
+ *
+ * Return: none
+ */
+void cds_trigger_recovery(enum cds_hang_reason reason);
 
 void cds_set_wakelock_logging(bool value);
 bool cds_is_wakelock_enabled(void);
@@ -431,4 +509,28 @@ void cds_print_htc_credit_history(uint32_t count, qdf_abstract_print * print,
 				  void *print_priv);
 #endif
 
+/**
+ * cds_smmu_mem_map_setup() - Check SMMU S1 stage enable
+ *                            status and setup wlan driver
+ * @osdev: Parent device instance
+ *
+ * This API checks if SMMU S1 translation is enabled in
+ * platform driver or not and sets it accordingly in driver.
+ *
+ * Return: none
+ */
+void cds_smmu_mem_map_setup(qdf_device_t osdev);
+
+/**
+ * cds_smmu_map_unmap() - Map / Unmap DMA buffer to IPA UC
+ * @map: Map / unmap operation
+ * @num_buf: Number of buffers in array
+ * @buf_arr: Buffer array of DMA mem mapping info
+ *
+ * This API maps/unmaps WLAN-IPA buffers if SMMU S1 translation
+ * is enabled.
+ *
+ * Return: Status of map operation
+ */
+int cds_smmu_map_unmap(bool map, uint32_t num_buf, qdf_mem_info_t *buf_arr);
 #endif /* if !defined __CDS_API_H */

@@ -111,7 +111,7 @@ lim_process_disassoc_frame(tpAniSirGlobal pMac, uint8_t *pRxPacketInfo,
 		((eLIM_SME_WT_DISASSOC_STATE == psessionEntry->limSmeState) ||
 		(eLIM_SME_WT_DEAUTH_STATE == psessionEntry->limSmeState))) {
 		if (!(psessionEntry->disassocmsgcnt & 0xF)) {
-			pe_info("received Disassoc frame in %s"
+			pe_debug("received Disassoc frame in %s"
 				"(already processing previously received Disassoc frame)"
 				"Dropping this.. Disassoc Failed %d",
 				lim_sme_state_str(psessionEntry->limSmeState),
@@ -153,7 +153,7 @@ lim_process_disassoc_frame(tpAniSirGlobal pMac, uint8_t *pRxPacketInfo,
 	/* Get reasonCode from Disassociation frame body */
 	reasonCode = sir_read_u16(pBody);
 
-	pe_info("Received Disassoc frame for Addr: " MAC_ADDRESS_STR
+	pe_debug("Received Disassoc frame for Addr: " MAC_ADDRESS_STR
 			  "(mlm state=%s, sme state=%d RSSI=%d),"
 			  "with reason code %d [%s] from " MAC_ADDRESS_STR,
 		       MAC_ADDR_ARRAY(pHdr->da),
@@ -162,6 +162,16 @@ lim_process_disassoc_frame(tpAniSirGlobal pMac, uint8_t *pRxPacketInfo,
 		       lim_dot11_reason_str(reasonCode), MAC_ADDR_ARRAY(pHdr->sa));
 	lim_diag_event_report(pMac, WLAN_PE_DIAG_DISASSOC_FRAME_EVENT,
 		psessionEntry, 0, reasonCode);
+
+	if (pMac->roam.configParam.enable_fatal_event &&
+		(reasonCode != eSIR_MAC_UNSPEC_FAILURE_REASON &&
+		reasonCode != eSIR_MAC_DEAUTH_LEAVING_BSS_REASON &&
+		reasonCode != eSIR_MAC_DISASSOC_LEAVING_BSS_REASON)) {
+		cds_flush_logs(WLAN_LOG_TYPE_FATAL,
+				WLAN_LOG_INDICATOR_HOST_DRIVER,
+				WLAN_LOG_REASON_DISCONNECT,
+				false, false);
+	}
 	/**
 	 * Extract 'associated' context for STA, if any.
 	 * This is maintained by DPH and created by LIM.

@@ -510,13 +510,14 @@ QDF_STATUS wlansap_clean_cb(ptSapContext pSapCtx, uint32_t freeFlag      /* 0 / 
 		  "wlansap_clean_cb");
 
 	hal = (tHalHandle) CDS_GET_HAL_CB(pSapCtx->p_cds_gctx);
-	if (eSAP_TRUE == pSapCtx->isSapSessionOpen && hal) {
+	if (true == pSapCtx->isSapSessionOpen && hal) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_DEBUG,
 				"close existing SAP session");
 		sap_close_session(hal, pSapCtx, sap_roam_session_close_callback,
 					pSapCtx);
 	}
 
+	sap_free_roam_profile(&pSapCtx->csr_roamProfile);
 	qdf_mem_zero(pSapCtx, sizeof(tSapContext));
 
 	pSapCtx->p_cds_gctx = NULL;
@@ -524,7 +525,7 @@ QDF_STATUS wlansap_clean_cb(ptSapContext pSapCtx, uint32_t freeFlag      /* 0 / 
 	pSapCtx->sapsMachine = eSAP_DISCONNECTED;
 
 	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-		  "%s: Initializing State: %d, sapContext value = %p", __func__,
+		  "%s: Initializing State: %d, sapContext value = %pK", __func__,
 		  pSapCtx->sapsMachine, pSapCtx);
 	pSapCtx->sessionId = 0;
 	pSapCtx->channel = 0;
@@ -660,6 +661,8 @@ wlansap_set_scan_acs_channel_params(tsap_Config_t *pconfig,
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
 	psap_ctx->cc_switch_mode = pconfig->cc_switch_mode;
 #endif
+	psap_ctx->auto_channel_select_weight =
+		 pconfig->auto_channel_select_weight;
 	psap_ctx->pUsrContext = pusr_context;
 	psap_ctx->enableOverLapCh = pconfig->enOverLapCh;
 	psap_ctx->acs_cfg = &pconfig->acs_cfg;
@@ -700,6 +703,19 @@ wlansap_set_scan_acs_channel_params(tsap_Config_t *pconfig,
 
 	return QDF_STATUS_SUCCESS;
 }
+
+eCsrPhyMode wlan_sap_get_phymode(void *ctx)
+{
+	ptSapContext sap_ctx = CDS_GET_SAP_CB(ctx);
+
+	if (!sap_ctx) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			FL("Invalid SAP pointer from ctx"));
+		return 0;
+	}
+	return sap_ctx->csr_roamProfile.phyMode;
+}
+
 /**
  * wlan_sap_get_vht_ch_width() - Returns SAP VHT channel width.
  * @ctx:	Pointer to cds Context or Sap Context based on MBSSID
@@ -808,7 +824,7 @@ QDF_STATUS wlansap_start_bss(void *pCtx,     /* pwextCtx */
 	pSapCtx = CDS_GET_SAP_CB(pCtx);
 
 	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-		  "wlansap_start_bss: sapContext=%p", pSapCtx);
+		  "wlansap_start_bss: sapContext=%pK", pSapCtx);
 
 	if (NULL == pSapCtx) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
@@ -832,6 +848,8 @@ QDF_STATUS wlansap_start_bss(void *pCtx,     /* pwextCtx */
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
 	pSapCtx->cc_switch_mode = pConfig->cc_switch_mode;
 #endif
+	pSapCtx->auto_channel_select_weight =
+		 pConfig->auto_channel_select_weight;
 	pSapCtx->pUsrContext = pUsrContext;
 	pSapCtx->enableOverLapCh = pConfig->enOverLapCh;
 	pSapCtx->acs_cfg = &pConfig->acs_cfg;
@@ -1255,7 +1273,7 @@ QDF_STATUS
 wlansap_modify_acl
 	(void *ctx,
 	uint8_t *peer_sta_mac, eSapACLType list_type, eSapACLCmdType cmd) {
-	eSapBool sta_white_list = eSAP_FALSE, sta_black_list = eSAP_FALSE;
+	bool sta_white_list = false, sta_black_list = false;
 	uint8_t staWLIndex, staBLIndex;
 	ptSapContext sap_ctx = CDS_GET_SAP_CB(ctx);
 
@@ -2218,9 +2236,9 @@ QDF_STATUS wlansap_send_action(void *pCtx, const uint8_t *pBuf,
 		return QDF_STATUS_E_FAULT;
 	}
 	hHal = CDS_GET_HAL_CB(pSapCtx->p_cds_gctx);
-	if ((NULL == hHal) || (eSAP_TRUE != pSapCtx->isSapSessionOpen)) {
+	if ((NULL == hHal) || (true != pSapCtx->isSapSessionOpen)) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
-			  "%s: HAL pointer (%p) NULL OR SME session is not open (%d)",
+			  "%s: HAL pointer (%pK) NULL OR SME session is not open (%d)",
 			  __func__, hHal, pSapCtx->isSapSessionOpen);
 		return QDF_STATUS_E_FAULT;
 	}
@@ -2272,9 +2290,9 @@ QDF_STATUS wlansap_remain_on_channel(void *pCtx,
 		return QDF_STATUS_E_FAULT;
 	}
 	hHal = CDS_GET_HAL_CB(pSapCtx->p_cds_gctx);
-	if ((NULL == hHal) || (eSAP_TRUE != pSapCtx->isSapSessionOpen)) {
+	if ((NULL == hHal) || (true != pSapCtx->isSapSessionOpen)) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
-			  "%s: HAL pointer (%p) NULL OR SME session is not open (%d)",
+			  "%s: HAL pointer (%pK) NULL OR SME session is not open (%d)",
 			  __func__, hHal, pSapCtx->isSapSessionOpen);
 		return QDF_STATUS_E_FAULT;
 	}
@@ -2320,9 +2338,9 @@ QDF_STATUS wlansap_cancel_remain_on_channel(void *pCtx,
 	}
 	hHal = CDS_GET_HAL_CB(pSapCtx->p_cds_gctx);
 	if ((NULL == hHal) ||
-		(eSAP_TRUE != pSapCtx->isSapSessionOpen)) {
+		(true != pSapCtx->isSapSessionOpen)) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
-			  "%s: HAL pointer (%p) NULL OR SME session is not open (%d)",
+			  "%s: HAL pointer (%pK) NULL OR SME session is not open (%d)",
 			  __func__, hHal, pSapCtx->isSapSessionOpen);
 		return QDF_STATUS_E_FAULT;
 	}
@@ -2519,9 +2537,9 @@ QDF_STATUS wlansap_register_mgmt_frame
 		return QDF_STATUS_E_FAULT;
 	}
 	hHal = CDS_GET_HAL_CB(pSapCtx->p_cds_gctx);
-	if ((NULL == hHal) || (eSAP_TRUE != pSapCtx->isSapSessionOpen)) {
+	if ((NULL == hHal) || (true != pSapCtx->isSapSessionOpen)) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
-			  "%s: HAL pointer (%p) NULL OR SME session is not open (%d)",
+			  "%s: HAL pointer (%pK) NULL OR SME session is not open (%d)",
 			  __func__, hHal, pSapCtx->isSapSessionOpen);
 		return QDF_STATUS_E_FAULT;
 	}
@@ -2569,9 +2587,9 @@ QDF_STATUS wlansap_de_register_mgmt_frame
 		return QDF_STATUS_E_FAULT;
 	}
 	hHal = CDS_GET_HAL_CB(pSapCtx->p_cds_gctx);
-	if ((NULL == hHal) || (eSAP_TRUE != pSapCtx->isSapSessionOpen)) {
+	if ((NULL == hHal) || (true != pSapCtx->isSapSessionOpen)) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
-			  "%s: HAL pointer (%p) NULL OR SME session is not open (%d)",
+			  "%s: HAL pointer (%pK) NULL OR SME session is not open (%d)",
 			  __func__, hHal, pSapCtx->isSapSessionOpen);
 		return QDF_STATUS_E_FAULT;
 	}
@@ -3735,7 +3753,38 @@ wlansap_set_invalid_session(void *cds_ctx)
 	}
 
 	psapctx->sessionId = CSR_SESSION_ID_INVALID;
-	psapctx->isSapSessionOpen = eSAP_FALSE;
+	psapctx->isSapSessionOpen = false;
 
 	return QDF_STATUS_SUCCESS;
+}
+
+void wlansap_cleanup_cac_timer(void *sap_ctx)
+{
+	tHalHandle hal;
+	tpAniSirGlobal pmac;
+	ptSapContext psap_ctx = CDS_GET_SAP_CB(sap_ctx);
+
+	if (!psap_ctx) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			FL("Invalid SAP context"));
+		return;
+	}
+
+	hal = CDS_GET_HAL_CB(psap_ctx->p_cds_gctx);
+	if (!hal) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			FL("Invalid hal pointer"));
+		return;
+	}
+
+	pmac = PMAC_STRUCT(hal);
+	if (pmac->sap.SapDfsInfo.is_dfs_cac_timer_running) {
+		qdf_mc_timer_stop(&pmac->sap.SapDfsInfo.
+				  sap_dfs_cac_timer);
+		pmac->sap.SapDfsInfo.is_dfs_cac_timer_running = 0;
+		qdf_mc_timer_destroy(
+			&pmac->sap.SapDfsInfo.sap_dfs_cac_timer);
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			FL("sapdfs, force cleanup running dfs cac timer"));
+	}
 }

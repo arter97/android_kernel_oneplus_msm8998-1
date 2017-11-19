@@ -128,7 +128,7 @@ int hdd_update_cds_config_ftm(hdd_context_t *hdd_ctx)
 		return -ENOMEM;
 	}
 
-	cds_cfg->driver_type = eDRIVER_TYPE_MFG;
+	cds_cfg->driver_type = QDF_DRIVER_TYPE_MFG;
 	cds_cfg->powersave_offload_enabled =
 			hdd_ctx->config->enablePowersaveOffload;
 	hdd_lpass_populate_cds_config(cds_cfg, hdd_ctx);
@@ -335,6 +335,9 @@ static void wlanqcmbr_mc_process_msg(void *message)
 	uint32_t data_len;
 
 	data_len = *((uint32_t *) message) + sizeof(uint32_t);
+	if (data_len > MAX_UTF_LENGTH + 4)
+		return;
+
 	qcmbr_buf = qdf_mem_malloc(sizeof(qcmbr_queue_t));
 	if (qcmbr_buf != NULL) {
 		memcpy(qcmbr_buf->utf_buf, message, data_len);

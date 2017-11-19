@@ -82,7 +82,7 @@ typedef enum {
 	eCSR_ENCRYPT_TYPE_WEP40,
 	eCSR_ENCRYPT_TYPE_WEP104,
 	eCSR_ENCRYPT_TYPE_TKIP,
-	eCSR_ENCRYPT_TYPE_AES,
+	eCSR_ENCRYPT_TYPE_AES,/* CCMP */
 #ifdef FEATURE_WLAN_WAPI
 	/* WAPI */
 	eCSR_ENCRYPT_TYPE_WPI,
@@ -97,6 +97,8 @@ typedef enum {
 	/* 11w BIP */
 	eCSR_ENCRYPT_TYPE_AES_CMAC,
 #endif
+	eCSR_ENCRYPT_TYPE_AES_GCMP,
+	eCSR_ENCRYPT_TYPE_AES_GCMP_256,
 	eCSR_ENCRYPT_TYPE_ANY,
 	eCSR_NUM_OF_ENCRYPT_TYPE = eCSR_ENCRYPT_TYPE_ANY,
 
@@ -168,6 +170,7 @@ typedef enum {
 
 	eCSR_SCAN_SOFTAP_CHANNEL_RANGE,
 	eCSR_SCAN_P2P_FIND_PEER,
+	eCSR_SCAN_RRM,
 } eCsrRequestType;
 
 typedef enum {
@@ -221,6 +224,8 @@ typedef enum {
 #define CSR_WEP104_KEY_LEN          13
 #define CSR_TKIP_KEY_LEN            32
 #define CSR_AES_KEY_LEN             16
+#define CSR_AES_GCMP_KEY_LEN        16
+#define CSR_AES_GCMP_256_KEY_LEN    32
 #define CSR_MAX_TX_POWER        (WNI_CFG_CURRENT_TX_POWER_LEVEL_STAMAX)
 #define CSR_MAX_RSC_LEN             16
 #ifdef FEATURE_WLAN_WAPI
@@ -243,7 +248,7 @@ typedef struct tagCsrChannelInfo {
 typedef struct tagCsrSSIDInfo {
 	tSirMacSSid SSID;
 	bool handoffPermitted;
-	bool ssidHidden;
+	uint8_t ssidHidden;
 } tCsrSSIDInfo;
 
 typedef struct tagCsrSSIDs {
@@ -306,7 +311,7 @@ typedef struct tagCsrScanRequest {
 	bool ie_whitelist;
 	uint32_t probe_req_ie_bitmap[PROBE_REQ_BITMAP_LEN];
 	uint32_t num_vendor_oui;
-	struct vendor_oui *voui;
+	uint32_t *voui;
 } tCsrScanRequest;
 
 typedef struct tagCsrScanResultInfo {
@@ -538,6 +543,7 @@ typedef enum {
 /* comment inside indicates what roaming callback gets */
 typedef enum {
 	eCSR_ROAM_RESULT_NONE,
+	eCSR_ROAM_RESULT_SUCCESS = eCSR_ROAM_RESULT_NONE,
 	/*
 	 * If roamStatus is eCSR_ROAM_ASSOCIATION_COMPLETION,
 	 * tCsrRoamInfo's pBssDesc may pass back
@@ -937,7 +943,6 @@ typedef struct tagCsrRoamProfile {
 	uint8_t MFPCapable;
 #endif
 	tCsrKeys Keys;
-	eCsrCBChoice CBMode;
 	tCsrChannelInfo ChannelInfo;
 	uint8_t operationChannel;
 	struct ch_params_s ch_params;
@@ -997,9 +1002,12 @@ typedef struct tagCsrRoamProfile {
 	tSirMacRateSet  supported_rates;
 	tSirMacRateSet  extended_rates;
 	struct qdf_mac_addr bssid_hint;
+	bool force_24ghz_in_ht20;
 	bool do_not_roam;
 #ifdef WLAN_FEATURE_FILS_SK
 	bool fils_connection;
+	uint8_t *hlp_ie;
+	uint32_t hlp_ie_len;
 	struct cds_fils_connection_info *fils_con_info;
 #endif
 } tCsrRoamProfile;
@@ -1028,7 +1036,6 @@ typedef struct tagCsrRoamConnectedProfile {
 	tCsrEncryptionList EncryptionInfo;
 	eCsrEncryptionType mcEncryptionType;
 	tCsrEncryptionList mcEncryptionInfo;
-	eCsrCBChoice CBMode;
 	uint8_t operationChannel;
 	uint32_t vht_channel_width;
 	uint16_t beaconInterval;
@@ -1075,7 +1082,9 @@ typedef struct tagCsr11rConfigParams {
 typedef struct tagCsrNeighborRoamConfigParams {
 
 	uint32_t nNeighborScanTimerPeriod;
+	uint32_t neighbor_scan_min_timer_period;
 	uint8_t nNeighborLookupRssiThreshold;
+	int8_t rssi_thresh_offset_5g;
 	uint16_t nNeighborScanMinChanTime;
 	uint16_t nNeighborScanMaxChanTime;
 	sCsrChannel neighborScanChanList;
@@ -1137,6 +1146,7 @@ typedef struct tagCsrConfigParam {
 	bool Is11eSupportEnabled;
 	bool Is11dSupportEnabled;
 	bool Is11dSupportEnabledOriginal;
+	bool enable_11d_in_world_mode;
 	bool Is11hSupportEnabled;
 	bool shortSlotTime;
 	bool ProprietaryRatesEnabled;
@@ -1311,6 +1321,8 @@ typedef struct tagCsrConfigParam {
 	uint32_t roam_dense_traffic_thresh;
 	uint32_t roam_dense_rssi_thresh_offset;
 	uint32_t roam_dense_min_aps;
+	int8_t roam_bg_scan_bad_rssi_thresh;
+	uint32_t roam_bg_scan_client_bitmap;
 	uint32_t obss_width_interval;
 	uint32_t obss_active_dwelltime;
 	uint32_t obss_passive_dwelltime;
@@ -1341,6 +1353,11 @@ typedef struct tagCsrConfigParam {
 	uint16_t pkt_err_disconn_th;
 	bool is_bssid_hint_priority;
 	bool is_force_1x1;
+	uint16_t num_11b_tx_chains;
+	uint16_t num_11ag_tx_chains;
+	uint32_t disallow_duration;
+	uint32_t rssi_channel_penalization;
+	uint32_t num_disallowed_aps;
 	uint32_t scan_probe_repeat_time;
 	uint32_t scan_num_probes;
 } tCsrConfigParam;
@@ -1353,6 +1370,8 @@ typedef struct tagCsrUpdateConfigParam {
 #define csr_roamIsRoamOffloadEnabled(pMac) \
 	(pMac->roam.configParam.isRoamOffloadEnabled)
 #define DEFAULT_REASSOC_FAILURE_TIMEOUT 1000
+#else
+#define csr_roamIsRoamOffloadEnabled(pMac)  false
 #endif
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
@@ -1444,7 +1463,13 @@ typedef struct tagCsrRoamInfo {
 	uint8_t roamSynchInProgress;
 	uint8_t synchAuthStatus;
 	uint8_t kck[SIR_KCK_KEY_LEN];
-	uint8_t kek[SIR_KEK_KEY_LEN];
+	uint8_t kek[SIR_KEK_KEY_LEN_FILS];
+	uint8_t kek_len;
+	uint32_t pmk_len;
+	uint8_t pmk[SIR_PMK_LEN];
+	uint8_t pmkid[SIR_PMKID_LEN];
+	bool update_erp_next_seq_num;
+	uint16_t next_erp_seq_num;
 	uint8_t replay_ctr[SIR_REPLAY_CTR_LEN];
 	uint8_t subnet_change_status;
 #endif
@@ -1473,6 +1498,17 @@ typedef struct tagCsrRoamInfo {
 	bool reassoc;
 	/* Extended capabilities of STA */
 	uint8_t ecsa_capable;
+	bool ampdu;
+	bool sgi_enable;
+	bool tx_stbc;
+	bool rx_stbc;
+	tSirMacHTChannelWidth ch_width;
+	enum sir_sme_phy_mode mode;
+	uint8_t max_supp_idx;
+	uint8_t max_ext_idx;
+	uint8_t max_mcs_idx;
+	uint8_t rx_mcs_map;
+	uint8_t tx_mcs_map;
 	bool is_fils_connection;
 	uint16_t fils_seq_num;
 #ifdef WLAN_FEATURE_FILS_SK
@@ -1506,7 +1542,18 @@ typedef struct sSirSmeAssocIndToUpperLayerCnf {
 	tSirSmeChanInfo chan_info;
 	uint8_t target_channel;
 	/* Extended capabilities of STA */
-	uint8_t              ecsa_capable;
+	uint8_t ecsa_capable;
+	bool ampdu;
+	bool sgi_enable;
+	bool tx_stbc;
+	tSirMacHTChannelWidth ch_width;
+	enum sir_sme_phy_mode mode;
+	bool rx_stbc;
+	uint8_t max_supp_idx;
+	uint8_t max_ext_idx;
+	uint8_t max_mcs_idx;
+	uint8_t rx_mcs_map;
+	uint8_t tx_mcs_map;
 } tSirSmeAssocIndToUpperLayerCnf, *tpSirSmeAssocIndToUpperLayerCnf;
 
 typedef struct tagCsrSummaryStatsInfo {
@@ -1762,4 +1809,21 @@ static inline void csr_roam_fill_tdls_info(tpAniSirGlobal mac_ctx, tCsrRoamInfo 
 #endif
 void csr_packetdump_timer_stop(void);
 
+/**
+ * csr_get_channel_status() - get chan info via channel number
+ * @p_mac: Pointer to Global MAC structure
+ * @channel_id: channel id
+ *
+ * Return: chan status info
+ */
+struct lim_channel_status *csr_get_channel_status(void *p_mac,
+						  uint32_t channel_id);
+
+/**
+ * csr_clear_channel_status() - clear chan info
+ * @p_mac: Pointer to Global MAC structure
+ *
+ * Return: none
+ */
+void csr_clear_channel_status(void *p_mac);
 #endif

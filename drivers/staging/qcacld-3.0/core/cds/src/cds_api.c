@@ -60,6 +60,12 @@
 #include "ol_txrx.h"
 #include "pktlog_ac.h"
 #include "wlan_hdd_ipa.h"
+
+#ifdef ENABLE_SMMU_S1_TRANSLATION
+#include "pld_common.h"
+#include <asm/dma-iommu.h>
+#include <linux/iommu.h>
+#endif
 /* Preprocessor Definitions and Constants */
 
 /* Maximum number of cds message queue get wrapper failures to cause panic */
@@ -447,7 +453,7 @@ QDF_STATUS cds_open(void)
 	 * into hdd context config entry, leads to pe_open() to fail, if
 	 * con_mode change happens from FTM mode to any other mode.
 	 */
-	if (DRIVER_TYPE_PRODUCTION == cds_cfg->driver_type)
+	if (QDF_DRIVER_TYPE_PRODUCTION == cds_cfg->driver_type)
 		pHddCtx->config->maxNumberOfPeers = cds_cfg->max_station;
 
 	HTCHandle = cds_get_context(QDF_MODULE_ID_HTC);
@@ -894,11 +900,15 @@ QDF_STATUS cds_post_disable(void)
 	 * - Clean up CE tasklets.
 	 */
 
-	cds_info("send denint sequence to firmware");
-	if (!cds_is_driver_recovering())
+	cds_info("send deinit sequence to firmware");
+	if (!(cds_is_driver_recovering() || cds_is_driver_in_bad_state()))
 		cds_suspend_target(wma_handle);
 	hif_disable_isr(hif_ctx);
 	hif_reset_soc(hif_ctx);
+
+	if (gp_cds_context->htc_ctx) {
+		htc_stop(gp_cds_context->htc_ctx);
+	}
 
 	ol_txrx_pdev_pre_detach(txrx_pdev, 1);
 
@@ -928,7 +938,6 @@ QDF_STATUS cds_close(v_CONTEXT_t cds_context)
 	hdd_lro_destroy();
 
 	if (gp_cds_context->htc_ctx) {
-		htc_stop(gp_cds_context->htc_ctx);
 		htc_destroy(gp_cds_context->htc_ctx);
 		gp_cds_context->htc_ctx = NULL;
 	}
@@ -1350,6 +1359,9 @@ QDF_STATUS cds_set_context(QDF_MODULE_ID module_id, void *context)
 	case QDF_MODULE_ID_HIF:
 		p_cds_context->pHIFContext = context;
 		break;
+	case QDF_MODULE_ID_HDD:
+		p_cds_context->pHDDContext = context;
+		break;
 	default:
 		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
 			  "%s: Module ID %i does not have its context managed by CDS",
@@ -1462,7 +1474,7 @@ QDF_STATUS cds_free_context(void *p_cds_context, QDF_MODULE_ID moduleID,
  *         QDF_STATUS_E_FAILURE on failure
  *         QDF_STATUS_E_RESOURCES on resource allocation failure
  */
-QDF_STATUS cds_mq_post_message_by_priority(CDS_MQ_ID msgQueueId,
+QDF_STATUS cds_mq_post_message_by_priority(QDF_MODULE_ID msgQueueId,
 					   cds_msg_t *pMsg,
 					   int is_high_priority)
 {
@@ -1492,28 +1504,28 @@ QDF_STATUS cds_mq_post_message_by_priority(CDS_MQ_ID msgQueueId,
 
 	switch (msgQueueId) {
 	/* Message Queue ID for messages bound for SME */
-	case CDS_MQ_ID_SME:
+	case QDF_MODULE_ID_SME:
 	{
 		pTargetMq = &(gp_cds_context->qdf_sched.smeMcMq);
 		break;
 	}
 
 	/* Message Queue ID for messages bound for PE */
-	case CDS_MQ_ID_PE:
+	case QDF_MODULE_ID_PE:
 	{
 		pTargetMq = &(gp_cds_context->qdf_sched.peMcMq);
 		break;
 	}
 
 	/* Message Queue ID for messages bound for wma */
-	case CDS_MQ_ID_WMA:
+	case QDF_MODULE_ID_WMA:
 	{
 		pTargetMq = &(gp_cds_context->qdf_sched.wmaMcMq);
 		break;
 	}
 
 	/* Message Queue ID for messages bound for the SYS module */
-	case CDS_MQ_ID_SYS:
+	case QDF_MODULE_ID_SYS:
 	{
 		pTargetMq = &(gp_cds_context->qdf_sched.sysMcMq);
 		break;
@@ -1804,7 +1816,6 @@ static QDF_STATUS cds_force_assert_target(qdf_device_t qdf_ctx)
 	/* wait for firmware assert to trigger a recovery event */
 	status = qdf_wait_single_event(&wma->recovery_event,
 				       WMA_CRASH_INJECT_TIMEOUT);
-
 	if (QDF_IS_STATUS_ERROR(status)) {
 		cds_err("Failed target force assert wait; status:%d", status);
 		goto schedule_recovery;
@@ -1817,6 +1828,7 @@ schedule_recovery:
 	cds_err("Scheduling recovery work without firmware assert");
 	cds_set_recovery_in_progress(true);
 	pld_schedule_recovery_work(qdf_ctx->dev);
+
 	return status;
 }
 #endif
@@ -1832,7 +1844,7 @@ static void cds_trigger_recovery_work(void *param)
 	struct qdf_runtime_lock recovery_lock;
 	qdf_device_t qdf_ctx;
 
-	if (cds_is_driver_recovering()) {
+	if (cds_is_driver_recovering() || cds_is_driver_in_bad_state()) {
 		cds_err("Recovery in progress; ignoring recovery trigger");
 		return;
 	}
@@ -1850,18 +1862,59 @@ static void cds_trigger_recovery_work(void *param)
 	}
 
 	qdf_runtime_pm_prevent_suspend(&recovery_lock);
+
 	cds_force_assert_target(qdf_ctx);
+
 	qdf_runtime_pm_allow_suspend(&recovery_lock);
 	qdf_runtime_lock_deinit(&recovery_lock);
 }
 
 /**
+ * cds_get_recovery_reason() - get self recovery reason
+ * @reason: recovery reason
+ *
+ * Return: None
+ */
+void cds_get_recovery_reason(enum cds_hang_reason *reason)
+{
+	if (!gp_cds_context) {
+		cds_err("gp_cds_context is null");
+		return;
+	}
+
+	*reason = gp_cds_context->recovery_reason;
+}
+
+/**
+ * cds_reset_recovery_reason() - reset the reason to unspecified
+ *
+ * Return: None
+ */
+void cds_reset_recovery_reason(void)
+{
+	if (!gp_cds_context) {
+		cds_err("gp_cds_context is null");
+		return;
+	}
+
+	gp_cds_context->recovery_reason = CDS_REASON_UNSPECIFIED;
+}
+
+/**
  * cds_trigger_recovery() - trigger self recovery
+ * @reason: recovery reason
  *
  * Return: none
  */
-void cds_trigger_recovery(void)
+void cds_trigger_recovery(enum cds_hang_reason reason)
 {
+	if (!gp_cds_context) {
+		cds_err("gp_cds_context is null");
+		return;
+	}
+
+	gp_cds_context->recovery_reason = reason;
+
 	if (in_atomic()) {
 		qdf_queue_work(0, gp_cds_context->cds_recovery_wq,
 				&gp_cds_context->cds_recovery_work);
@@ -2211,7 +2264,7 @@ uint32_t cds_get_log_indicator(void)
 	}
 
 	if (cds_is_load_or_unload_in_progress() ||
-	    cds_is_driver_recovering()) {
+	    cds_is_driver_recovering() || cds_is_driver_in_bad_state()) {
 		return WLAN_LOG_INDICATOR_UNUSED;
 	}
 
@@ -2272,7 +2325,7 @@ QDF_STATUS cds_flush_logs(uint32_t is_fatal,
 		return QDF_STATUS_E_FAILURE;
 	}
 	if (cds_is_load_or_unload_in_progress() ||
-	    cds_is_driver_recovering()) {
+	    cds_is_driver_recovering() || cds_is_driver_in_bad_state()) {
 		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
 				"%s: un/Load/SSR in progress", __func__);
 		return QDF_STATUS_E_FAILURE;
@@ -2589,6 +2642,7 @@ QDF_STATUS cds_register_dp_cb(struct cds_dp_cbacks *dp_cbs)
 	cds_ctx->hdd_en_lro_in_cc_cb = dp_cbs->hdd_en_lro_in_cc_cb;
 	cds_ctx->hdd_disable_lro_in_cc_cb = dp_cbs->hdd_disble_lro_in_cc_cb;
 	cds_ctx->hdd_set_rx_mode_rps_cb = dp_cbs->hdd_set_rx_mode_rps_cb;
+	cds_ctx->hdd_ipa_set_mcc_mode_cb = dp_cbs->hdd_ipa_set_mcc_mode_cb;
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -2613,6 +2667,7 @@ QDF_STATUS cds_deregister_dp_cb(void)
 	cds_ctx->hdd_en_lro_in_cc_cb = NULL;
 	cds_ctx->hdd_disable_lro_in_cc_cb = NULL;
 	cds_ctx->hdd_set_rx_mode_rps_cb = NULL;
+	cds_ctx->hdd_ipa_set_mcc_mode_cb = NULL;
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -2710,5 +2765,47 @@ cds_print_htc_credit_history(uint32_t count, qdf_abstract_print *print,
 {
 	htc_print_credit_history(gp_cds_context->htc_ctx, count,
 				 print, print_priv);
+}
+#endif
+
+#ifdef ENABLE_SMMU_S1_TRANSLATION
+void cds_smmu_mem_map_setup(qdf_device_t osdev)
+{
+	int attr = 0;
+	struct dma_iommu_mapping *mapping = pld_smmu_get_mapping(osdev->dev);
+
+	osdev->smmu_s1_enabled = false;
+	if (!mapping) {
+		cds_info("No SMMU mapping present");
+		return;
+	}
+
+	if ((iommu_domain_get_attr(mapping->domain,
+				   DOMAIN_ATTR_S1_BYPASS, &attr) == 0) &&
+				   !attr)
+		osdev->smmu_s1_enabled = true;
+}
+
+#ifdef IPA_OFFLOAD
+int cds_smmu_map_unmap(bool map, uint32_t num_buf, qdf_mem_info_t *buf_arr)
+{
+	return hdd_ipa_uc_smmu_map(map, num_buf, buf_arr);
+}
+#else
+int cds_smmu_map_unmap(bool map, uint32_t num_buf, qdf_mem_info_t *buf_arr)
+{
+	return 0;
+}
+#endif
+
+#else
+void cds_smmu_mem_map_setup(qdf_device_t osdev)
+{
+	osdev->smmu_s1_enabled = false;
+}
+
+int cds_smmu_map_unmap(bool map, uint32_t num_buf, qdf_mem_info_t *buf_arr)
+{
+	return 0;
 }
 #endif

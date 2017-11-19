@@ -157,7 +157,7 @@ static inline void hif_napi_update_yield_stats(struct CE_state *ce_state,
 
 #ifdef FEATURE_NAPI_DEBUG
 #define NAPI_DEBUG(fmt, ...)			\
-	qdf_print("wlan: NAPI: %s:%d "fmt, __func__, __LINE__, ##__VA_ARGS__)
+	qdf_debug("wlan: NAPI: %s:%d "fmt, __func__, __LINE__, ##__VA_ARGS__)
 #else
 #define NAPI_DEBUG(fmt, ...) /* NO-OP */
 #endif /* FEATURE NAPI_DEBUG */
@@ -261,5 +261,19 @@ static inline int hif_napi_poll(struct napi_struct *napi, int budget)
 static inline void hif_napi_stats(struct qca_napi_data *napid) { }
 
 #endif /* FEATURE_NAPI */
+
+/**
+ * hif_update_napi_max_poll_time() - updates NAPI max poll time
+ * @ce_state: ce state
+ * @napi_info: pointer to napi info structure
+ * @cpu_id: cpu id
+ *
+ * This API updates NAPI max poll time per CE per SPU.
+ *
+ * Return: void
+ */
+void hif_update_napi_max_poll_time(struct CE_state *ce_state,
+				   struct qca_napi_info *napi_info,
+				   int cpu_id);
 
 #endif /* __HIF_NAPI_H__ */

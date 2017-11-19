@@ -43,6 +43,8 @@
 #include <wlan_nlink_srv.h>
 #include <qdf_trace.h>
 
+#define WLAN_CLD80211_MAX_SIZE (SKB_WITH_OVERHEAD(8192UL) - NLMSG_HDRLEN)
+
 #if defined(CONFIG_CNSS_LOGGER)
 
 #include <net/cnss_logger.h>
@@ -74,7 +76,7 @@ int nl_srv_init(void *wiphy)
 	wiphy_ptr = wiphy;
 	radio_idx = cnss_logger_device_register(wiphy, THIS_MODULE->name);
 	QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_ERROR,
-		  "%s: radio_index: %d, wiphy_ptr: %p",
+		  "%s: radio_index: %d, wiphy_ptr: %pK",
 		  __func__, radio_idx, wiphy_ptr);
 
 	if (radio_idx >= 0)
@@ -453,7 +455,17 @@ static int send_msg_to_cld80211(int mcgroup_id, int pid, int app_id,
 	if (in_interrupt() || irqs_disabled() || in_atomic())
 		flags = GFP_ATOMIC;
 
-	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, flags);
+	if (len > NLMSG_DEFAULT_SIZE) {
+		if (len > WLAN_CLD80211_MAX_SIZE) {
+			QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_ERROR,
+				"buf size:%d if more than max size: %d",
+				len, (int) WLAN_CLD80211_MAX_SIZE);
+			return -ENOMEM;
+		}
+		msg = nlmsg_new(WLAN_CLD80211_MAX_SIZE, flags);
+	} else {
+		msg = nlmsg_new(NLMSG_DEFAULT_SIZE, flags);
+	}
 	if (!msg) {
 		QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_ERROR,
 						"nlmsg malloc fails");
@@ -630,7 +642,7 @@ static void nl_srv_rcv_skb(struct sk_buff *skb)
 		if (nlh->nlmsg_len < sizeof(*nlh) || skb->len < nlh->nlmsg_len) {
 			QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_WARN,
 				  "NLINK: Invalid "
-				  "Netlink message: skb[%p], len[%d], nlhdr[%p], nlmsg_len[%d]",
+				  "Netlink message: skb[%pK], len[%d], nlhdr[%pK], nlmsg_len[%d]",
 				  skb, skb->len, nlh, nlh->nlmsg_len);
 			return;
 		}

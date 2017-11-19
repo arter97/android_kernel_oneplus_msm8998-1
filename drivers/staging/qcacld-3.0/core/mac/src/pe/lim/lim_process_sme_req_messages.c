@@ -169,7 +169,7 @@ static QDF_STATUS lim_process_set_hw_mode(tpAniSirGlobal mac, uint32_t *msg)
 	cds_message.type    = SIR_HAL_PDEV_SET_HW_MODE;
 
 	pe_debug("Posting SIR_HAL_SOC_SET_HW_MOD to WMA");
-	status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		pe_err("cds_mq_post_message failed!(err=%d)",
 			status);
@@ -240,7 +240,7 @@ static QDF_STATUS lim_process_set_dual_mac_cfg_req(tpAniSirGlobal mac,
 
 	pe_debug("Post SIR_HAL_PDEV_DUAL_MAC_CFG_REQ to WMA: %x %x",
 		req_msg->scan_config, req_msg->fw_mode_config);
-	status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		pe_err("cds_mq_post_message failed!(err=%d)",
 				status);
@@ -304,7 +304,7 @@ static QDF_STATUS lim_process_set_antenna_mode_req(tpAniSirGlobal mac,
 	pe_debug("Post SIR_HAL_SOC_ANTENNA_MODE_REQ to WMA: %d %d",
 		req_msg->num_rx_chains,
 		req_msg->num_tx_chains);
-	status = cds_mq_post_message(CDS_MQ_ID_WMA, &cds_message);
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		pe_err("cds_mq_post_message failed!(err=%d)",
 				status);
@@ -543,7 +543,7 @@ static bool __lim_process_sme_sys_ready_ind(tpAniSirGlobal pMac, uint32_t *pMsgB
 	msg.bodyptr = pMsgBuf;
 	msg.bodyval = 0;
 
-	if (ANI_DRIVER_TYPE(pMac) != eDRIVER_TYPE_MFG) {
+	if (ANI_DRIVER_TYPE(pMac) != QDF_DRIVER_TYPE_MFG) {
 		ready_req->pe_roam_synch_cb = pe_roam_synch_callback;
 		pe_register_callbacks_with_wma(pMac, ready_req);
 		pMac->lim.add_bssdescr_callback = ready_req->add_bssdescr_cb;
@@ -1702,8 +1702,9 @@ __lim_process_sme_join_req(tpAniSirGlobal mac_ctx, uint32_t *msg_buf)
 		/*Store Persona */
 		session->pePersona = sme_join_req->staPersona;
 		QDF_TRACE(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
-			  FL("PE PERSONA=%d cbMode %u"),
-			  session->pePersona, sme_join_req->cbMode);
+			  FL("PE PERSONA=%d cbMode %u force_24ghz_in_ht20 %d"),
+			  session->pePersona, sme_join_req->cbMode,
+			  sme_join_req->force_24ghz_in_ht20);
 		/* Copy The channel Id to the session Table */
 		session->currentOperChannel = bss_desc->channelId;
 		if (IS_5G_CH(session->currentOperChannel))
@@ -1740,6 +1741,8 @@ __lim_process_sme_join_req(tpAniSirGlobal mac_ctx, uint32_t *msg_buf)
 		/*Phy mode */
 		session->gLimPhyMode = bss_desc->nwType;
 		handle_ht_capabilityand_ht_info(mac_ctx, session);
+		session->force_24ghz_in_ht20 =
+			sme_join_req->force_24ghz_in_ht20;
 		/* cbMode is already merged value of peer and self -
 		 * done by csr in csr_get_cb_mode_from_ies */
 		session->htSupportedChannelWidthSet =
@@ -2749,23 +2752,23 @@ static void __lim_process_sme_deauth_req(tpAniSirGlobal mac_ctx,
 				ret_code = eSIR_SME_STA_NOT_AUTHENTICATED;
 				deauth_trigger = eLIM_HOST_DEAUTH;
 
-			/*
-			 * here we received deauth request from AP so sme state
-			 * is eLIM_SME_WT_DEAUTH_STATE.if we have ISSUED
-			 * delSta then mlm state should be
-			 * eLIM_MLM_WT_DEL_STA_RSP_STATE and ifwe got delBSS
-			 * rsp then mlm state should be eLIM_MLM_IDLE_STATE
-			 * so the below condition captures the state where
-			 * delSta not done and firmware still in
-			 * connected state.
-			 */
-			if (session_entry->limSmeState ==
+				/*
+				 * here we received deauth request from AP so
+				 * sme state is eLIM_SME_WT_DEAUTH_STATE.if we
+				 * have ISSUED delSta then mlm state should be
+				 * eLIM_MLM_WT_DEL_STA_RSP_STATE and ifwe got
+				 * delBSS rsp then mlm state should be
+				 * eLIM_MLM_IDLE_STATE so the below condition
+				 * captures the state where delSta not done
+				 * and firmware still in connected state.
+				 */
+				if (session_entry->limSmeState ==
 					eLIM_SME_WT_DEAUTH_STATE &&
 					session_entry->limMlmState !=
 					eLIM_MLM_IDLE_STATE &&
 					session_entry->limMlmState !=
 					eLIM_MLM_WT_DEL_STA_RSP_STATE)
-				ret_code = eSIR_SME_DEAUTH_STATUS;
+					ret_code = eSIR_SME_DEAUTH_STATUS;
 				goto send_deauth;
 			}
 			return;
@@ -3523,7 +3526,7 @@ void __lim_process_sme_assoc_cnf_new(tpAniSirGlobal mac_ctx, uint32_t msg_type,
 				       sta_ds->mlmStaContext.subType,
 				       true, sta_ds->mlmStaContext.authType,
 				       sta_ds->assocId, true,
-				       eSIR_MAC_UNSPEC_FAILURE_STATUS,
+				       eSIR_SME_UNEXPECTED_REQ_RESULT_CODE,
 				       session_entry);
 	}
 end:
@@ -3587,10 +3590,7 @@ static void __lim_process_sme_addts_req(tpAniSirGlobal pMac, uint32_t *pMsgBuf)
 
 	if (!LIM_IS_STA_ROLE(psessionEntry)) {
 		pe_err("AddTs received on AP - ignoring");
-		lim_send_sme_addts_rsp(pMac, pSirAddts->rspReqd, eSIR_FAILURE,
-				       psessionEntry, pSirAddts->req.tspec,
-				       smesessionId, smetransactionId);
-		return;
+		goto send_failure_addts_rsp;
 	}
 
 	pStaDs =
@@ -3599,19 +3599,13 @@ static void __lim_process_sme_addts_req(tpAniSirGlobal pMac, uint32_t *pMsgBuf)
 
 	if (pStaDs == NULL) {
 		pe_err("Cannot find AP context for addts req");
-		lim_send_sme_addts_rsp(pMac, pSirAddts->rspReqd, eSIR_FAILURE,
-				       psessionEntry, pSirAddts->req.tspec,
-				       smesessionId, smetransactionId);
-		return;
+		goto send_failure_addts_rsp;
 	}
 
 	if ((!pStaDs->valid) || (pStaDs->mlmStaContext.mlmState !=
 	    eLIM_MLM_LINK_ESTABLISHED_STATE)) {
 		pe_err("AddTs received in invalid MLM state");
-		lim_send_sme_addts_rsp(pMac, pSirAddts->rspReqd, eSIR_FAILURE,
-				       psessionEntry, pSirAddts->req.tspec,
-				       smesessionId, smetransactionId);
-		return;
+		goto send_failure_addts_rsp;
 	}
 
 	pSirAddts->req.wsmTspecPresent = 0;
@@ -3628,20 +3622,14 @@ static void __lim_process_sme_addts_req(tpAniSirGlobal pMac, uint32_t *pMsgBuf)
 		pSirAddts->req.lleTspecPresent = 1;
 	else {
 		pe_warn("ADDTS_REQ ignore - qos is disabled");
-		lim_send_sme_addts_rsp(pMac, pSirAddts->rspReqd, eSIR_FAILURE,
-				       psessionEntry, pSirAddts->req.tspec,
-				       smesessionId, smetransactionId);
-		return;
+		goto send_failure_addts_rsp;
 	}
 
 	if ((psessionEntry->limSmeState != eLIM_SME_ASSOCIATED_STATE) &&
 	    (psessionEntry->limSmeState != eLIM_SME_LINK_EST_STATE)) {
 		pe_err("AddTs received in invalid LIMsme state (%d)",
 			psessionEntry->limSmeState);
-		lim_send_sme_addts_rsp(pMac, pSirAddts->rspReqd, eSIR_FAILURE,
-				       psessionEntry, pSirAddts->req.tspec,
-				       smesessionId, smetransactionId);
-		return;
+		goto send_failure_addts_rsp;
 	}
 
 	if (pMac->lim.gLimAddtsSent) {
@@ -3650,10 +3638,7 @@ static void __lim_process_sme_addts_req(tpAniSirGlobal pMac, uint32_t *pMsgBuf)
 			pMac->lim.gLimAddtsReq.req.tspec.tsinfo.traffic.tsid,
 			pMac->lim.gLimAddtsReq.req.tspec.tsinfo.traffic.
 			userPrio);
-		lim_send_sme_addts_rsp(pMac, pSirAddts->rspReqd, eSIR_FAILURE,
-				       psessionEntry, pSirAddts->req.tspec,
-				       smesessionId, smetransactionId);
-		return;
+		goto send_failure_addts_rsp;
 	}
 
 	sir_copy_mac_addr(peerMac, psessionEntry->bssId);
@@ -3674,21 +3659,21 @@ static void __lim_process_sme_addts_req(tpAniSirGlobal pMac, uint32_t *pMsgBuf)
 		 eSIR_SUCCESS) {
 		pe_err("Unable to get Cfg param %d (Addts Rsp Timeout)",
 			WNI_CFG_ADDTS_RSP_TIMEOUT);
-		return;
+		goto send_failure_addts_rsp;
 	}
 
 	timeout = SYS_MS_TO_TICKS(timeout);
 	if (tx_timer_change(&pMac->lim.limTimers.gLimAddtsRspTimer, timeout, 0)
 	    != TX_SUCCESS) {
 		pe_err("AddtsRsp timer change failed!");
-		return;
+		goto send_failure_addts_rsp;
 	}
 	pMac->lim.gLimAddtsRspTimerCount++;
 	if (tx_timer_change_context(&pMac->lim.limTimers.gLimAddtsRspTimer,
 				    pMac->lim.gLimAddtsRspTimerCount) !=
 	    TX_SUCCESS) {
 		pe_err("AddtsRsp timer change failed!");
-		return;
+		goto send_failure_addts_rsp;
 	}
 	MTRACE(mac_trace
 		       (pMac, TRACE_CODE_TIMER_ACTIVATE, psessionEntry->peSessionId,
@@ -3699,9 +3684,14 @@ static void __lim_process_sme_addts_req(tpAniSirGlobal pMac, uint32_t *pMsgBuf)
 	if (tx_timer_activate(&pMac->lim.limTimers.gLimAddtsRspTimer) !=
 	    TX_SUCCESS) {
 		pe_err("AddtsRsp timer activation failed!");
-		return;
+		goto send_failure_addts_rsp;
 	}
 	return;
+
+send_failure_addts_rsp:
+	lim_send_sme_addts_rsp(pMac, pSirAddts->rspReqd, eSIR_FAILURE,
+			       psessionEntry, pSirAddts->req.tspec,
+			       smesessionId, smetransactionId);
 }
 
 static void __lim_process_sme_delts_req(tpAniSirGlobal pMac, uint32_t *pMsgBuf)
@@ -4073,6 +4063,9 @@ static void __lim_process_roam_scan_offload_req(tpAniSirGlobal mac_ctx,
 		}
 	}
 	qdf_mem_free(local_ie_buf);
+
+	if (pe_session)
+		lim_update_fils_rik(pe_session, req_buffer);
 
 	wma_msg.type = WMA_ROAM_SCAN_OFFLOAD_REQ;
 	wma_msg.bodyptr = req_buffer;
@@ -5609,9 +5602,21 @@ lim_update_ibss_prop_add_ies(tpAniSirGlobal pMac, uint8_t **pDstData_buff,
 		qdf_mem_copy(vendor_ie, pModifyIE->pIEBuffer,
 				pModifyIE->ieBufferlength);
 	} else {
-		uint16_t new_length = pModifyIE->ieBufferlength + *pDstDataLen;
-		uint8_t *new_ptr = qdf_mem_malloc(new_length);
+		uint16_t new_length;
+		uint8_t *new_ptr;
 
+		/*
+		 * check for uint16 overflow before using sum of two numbers as
+		 * length of size to malloc
+		 */
+		if (USHRT_MAX - pModifyIE->ieBufferlength < *pDstDataLen) {
+			pe_err("U16 overflow due to %d + %d",
+				pModifyIE->ieBufferlength, *pDstDataLen);
+			return false;
+		}
+
+		new_length = pModifyIE->ieBufferlength + *pDstDataLen;
+		new_ptr = qdf_mem_malloc(new_length);
 		if (NULL == new_ptr) {
 			pe_err("Memory allocation failed");
 			return false;
@@ -5664,7 +5669,7 @@ static void lim_process_modify_add_ies(tpAniSirGlobal mac_ctx,
 	if ((0 == modify_add_ies->modifyIE.ieBufferlength) ||
 		(0 == modify_add_ies->modifyIE.ieIDLen) ||
 		(NULL == modify_add_ies->modifyIE.pIEBuffer)) {
-		pe_err("Invalid request pIEBuffer %p ieBufferlength %d ieIDLen %d ieID %d. update Type %d",
+		pe_err("Invalid request pIEBuffer %pK ieBufferlength %d ieIDLen %d ieID %d. update Type %d",
 				modify_add_ies->modifyIE.pIEBuffer,
 				modify_add_ies->modifyIE.ieBufferlength,
 				modify_add_ies->modifyIE.ieID,

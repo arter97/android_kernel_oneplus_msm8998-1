@@ -62,7 +62,7 @@ static void destroy_htc_tx_ctrl_packet(HTC_PACKET *pPacket)
 	qdf_nbuf_t netbuf;
 
 	netbuf = (qdf_nbuf_t) GET_HTC_PACKET_NET_BUF_CONTEXT(pPacket);
-	AR_DEBUG_PRINTF(ATH_DEBUG_TRC, ("free ctrl netbuf :0x%p\n", netbuf));
+	AR_DEBUG_PRINTF(ATH_DEBUG_TRC, ("free ctrl netbuf :0x%pK\n", netbuf));
 	if (netbuf != NULL)
 		qdf_nbuf_free(netbuf);
 	qdf_mem_free(pPacket);
@@ -86,7 +86,7 @@ static HTC_PACKET *build_htc_tx_ctrl_packet(qdf_device_t osdev)
 			break;
 		}
 		AR_DEBUG_PRINTF(ATH_DEBUG_TRC,
-				("alloc ctrl netbuf :0x%p\n", netbuf));
+				("alloc ctrl netbuf :0x%pK\n", netbuf));
 		SET_HTC_PACKET_NET_BUF_CONTEXT(pPacket, netbuf);
 	} while (false);
 
@@ -252,7 +252,7 @@ HTC_HANDLE htc_create(void *ol_sc, struct htc_init_info *pInfo,
 		HTC_ERROR("%s: ol_sc = NULL", __func__);
 		return NULL;
 	}
-	HTC_TRACE("+htc_create ..  HIF :%p", ol_sc);
+	HTC_TRACE("+htc_create ..  HIF :%pK", ol_sc);
 
 	A_REGISTER_MODULE_DEBUG_INFO(htc);
 
@@ -321,7 +321,7 @@ HTC_HANDLE htc_create(void *ol_sc, struct htc_init_info *pInfo,
 
 	htc_recv_init(target);
 
-	HTC_TRACE("-htc_create: (0x%p)", target);
+	HTC_TRACE("-htc_create: (0x%pK)", target);
 
 	return (HTC_HANDLE) target;
 }
@@ -331,7 +331,7 @@ void htc_destroy(HTC_HANDLE HTCHandle)
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
 
 	AR_DEBUG_PRINTF(ATH_DEBUG_TRC,
-			("+htc_destroy ..  Destroying :0x%p\n", target));
+			("+htc_destroy ..  Destroying :0x%pK\n", target));
 	hif_stop(htc_get_hif_device(HTCHandle));
 	if (target)
 		htc_cleanup(target);
@@ -353,7 +353,7 @@ static void htc_control_tx_complete(void *Context, HTC_PACKET *pPacket)
 	HTC_TARGET *target = (HTC_TARGET *) Context;
 
 	AR_DEBUG_PRINTF(ATH_DEBUG_TRC,
-			("+-htc_control_tx_complete 0x%p (l:%d)\n", pPacket,
+			("+-htc_control_tx_complete 0x%pK (l:%d)\n", pPacket,
 			 pPacket->ActualLength));
 	htc_free_control_tx_packet(target, pPacket);
 }
@@ -496,9 +496,9 @@ uint8_t htc_get_credit_allocation(HTC_TARGET *target, uint16_t service_id)
 	return allocation;
 }
 
-A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
+QDF_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 {
-	A_STATUS status = A_OK;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
 	HTC_READY_EX_MSG *pReadyMsg;
 	struct htc_service_connect_req connect;
@@ -509,13 +509,13 @@ A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 	HTC_PACKET *rx_bundle_packet, *temp_bundle_packet;
 
 	AR_DEBUG_PRINTF(ATH_DEBUG_TRC,
-			("htc_wait_target - Enter (target:0x%p)\n", HTCHandle));
+			("htc_wait_target - Enter (target:0x%pK)\n", HTCHandle));
 	AR_DEBUG_PRINTF(ATH_DEBUG_RSVD1, ("+HWT\n"));
 
 	do {
 
 		status = hif_start(target->hif_dev);
-		if (A_FAILED(status)) {
+		if (QDF_IS_STATUS_ERROR(status)) {
 			AR_DEBUG_PRINTF(ATH_DEBUG_ERROR,
 					("hif_start failed\n"));
 			break;
@@ -523,14 +523,14 @@ A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 
 		status = htc_wait_recv_ctrl_message(target);
 
-		if (A_FAILED(status))
+		if (QDF_IS_STATUS_ERROR(status))
 			break;
 
 		if (target->CtrlResponseLength < (sizeof(HTC_READY_EX_MSG))) {
 			AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
 					("Invalid HTC Ready Msg Len:%d!\n",
 					 target->CtrlResponseLength));
-			status = A_ECOMM;
+			status = QDF_STATUS_E_BADMSG;
 			break;
 		}
 
@@ -543,7 +543,7 @@ A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 			AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
 					("Invalid HTC Ready Msg : 0x%X!\n",
 					 htc_rdy_msg_id));
-			status = A_ECOMM;
+			status = QDF_STATUS_E_BADMSG;
 			break;
 		}
 
@@ -553,6 +553,7 @@ A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 			(int)HTC_GET_FIELD(rdy_msg, HTC_READY_MSG, CREDITSIZE);
 		target->MaxMsgsPerHTCBundle =
 			(uint8_t) pReadyMsg->MaxMsgsPerHTCBundle;
+		UPDATE_ALT_CREDIT(target, pReadyMsg->AltDataCreditSize);
 		/* for old fw this value is set to 0. But the minimum value
 		 * should be 1, i.e., no bundling
 		 */
@@ -567,7 +568,7 @@ A_STATUS htc_wait_target(HTC_HANDLE HTCHandle)
 
 		if ((0 == target->TotalTransmitCredits)
 		    || (0 == target->TargetCreditSize)) {
-			status = A_ECOMM;
+			status = QDF_STATUS_E_ABORTED;
 			break;
 		}
 
@@ -645,12 +646,12 @@ static void reset_endpoint_states(HTC_TARGET *target)
  * htc_start() - Main HTC function to trigger HTC start
  * @HTCHandle: pointer to HTC handle
  *
- * Return: A_OK for success or an appropriate A_STATUS error
+ * Return: QDF_STATUS_SUCCESS for success or an appropriate QDF_STATUS error
  */
-A_STATUS htc_start(HTC_HANDLE HTCHandle)
+QDF_STATUS htc_start(HTC_HANDLE HTCHandle)
 {
 	qdf_nbuf_t netbuf;
-	A_STATUS status = A_OK;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(HTCHandle);
 	HTC_SETUP_COMPLETE_EX_MSG *pSetupComp;
 	HTC_PACKET *pSendPacket;
@@ -667,7 +668,7 @@ A_STATUS htc_start(HTC_HANDLE HTCHandle)
 			AR_DEBUG_ASSERT(false);
 			qdf_print("%s: allocControlTxPacket failed\n",
 				  __func__);
-			status = A_NO_MEMORY;
+			status = QDF_STATUS_E_NOMEM;
 			break;
 		}
 
@@ -709,7 +710,7 @@ A_STATUS htc_start(HTC_HANDLE HTCHandle)
 				       ENDPOINT_0, HTC_SERVICE_TX_PACKET_TAG);
 
 		status = htc_send_pkt((HTC_HANDLE) target, pSendPacket);
-		if (A_FAILED(status))
+		if (QDF_IS_STATUS_ERROR(status))
 			break;
 	} while (false);
 
@@ -902,17 +903,15 @@ void *htc_get_targetdef(HTC_HANDLE htc_handle)
  * Return: None
  */
 void htc_ipa_get_ce_resource(HTC_HANDLE htc_handle,
-			     qdf_dma_addr_t *ce_sr_base_paddr,
+			     qdf_shared_mem_t **ce_sr,
 			     uint32_t *ce_sr_ring_size,
 			     qdf_dma_addr_t *ce_reg_paddr)
 {
 	HTC_TARGET *target = GET_HTC_TARGET_FROM_HANDLE(htc_handle);
 
-	if (target->hif_dev != NULL) {
+	if (target->hif_dev)
 		hif_ipa_get_ce_resource(target->hif_dev,
-					ce_sr_base_paddr,
-					ce_sr_ring_size, ce_reg_paddr);
-	}
+					ce_sr, ce_sr_ring_size, ce_reg_paddr);
 }
 #endif /* IPA_OFFLOAD */
 

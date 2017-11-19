@@ -59,13 +59,25 @@
 #include "cdp_txrx_flow_ctrl_legacy.h"
 #include <cdp_txrx_peer_ops.h>
 #include "wlan_hdd_nan_datapath.h"
+#if defined(CONFIG_HL_SUPPORT)
+#include "wlan_tgt_def_config_hl.h"
+#else
 #include "wlan_tgt_def_config.h"
+#endif
 
 /** Number of Tx Queues */
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
 #define NUM_TX_QUEUES 5
 #else
 #define NUM_TX_QUEUES 4
+#endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+#define HDD_NL80211_BAND_2GHZ   NL80211_BAND_2GHZ
+#define HDD_NL80211_BAND_5GHZ   NL80211_BAND_5GHZ
+#else
+#define HDD_NL80211_BAND_2GHZ   IEEE80211_BAND_2GHZ
+#define HDD_NL80211_BAND_5GHZ   IEEE80211_BAND_5GHZ
 #endif
 
 /** Length of the TX queue for the netdev */
@@ -77,6 +89,9 @@
 #else
 #define HDD_TX_TIMEOUT          msecs_to_jiffies(5000)
 #endif
+
+#define HDD_TX_STALL_THRESHOLD 4
+
 /** Hdd Default MTU */
 #define HDD_DEFAULT_MTU         (1500)
 
@@ -167,6 +182,29 @@
 #define MIN_GENIE_LEN (2)
 
 #define WLAN_CHIP_VERSION   "WCNSS"
+
+#define hdd_log_ratelimited(rate, level, args...) \
+		QDF_TRACE_RATE_LIMITED(rate, QDF_MODULE_ID_HDD, level, ## args)
+#define hdd_log_ratelimited_fl(rate, level, format, args...) \
+		hdd_log_ratelimited(rate, level, FL(format), ## args)
+#define hdd_alert_ratelimited(rate, format, args...) \
+		hdd_log_ratelimited_fl(rate, QDF_TRACE_LEVEL_FATAL,\
+			format, ## args)
+#define hdd_err_ratelimited(rate, format, args...) \
+		hdd_log_ratelimited_fl(rate, QDF_TRACE_LEVEL_ERROR,\
+			format, ## args)
+#define hdd_warn_ratelimited(rate, format, args...) \
+		hdd_log_ratelimited_fl(rate, QDF_TRACE_LEVEL_WARN,\
+			format, ## args)
+#define hdd_notice_ratelimited(rate, format, args...) \
+		hdd_log_ratelimited_fl(rate, QDF_TRACE_LEVEL_INFO,\
+			format, ## args)
+#define hdd_info_ratelimited(rate, format, args...) \
+		hdd_log_ratelimited_fl(rate, QDF_TRACE_LEVEL_INFO,\
+			format, ## args)
+#define hdd_debug_ratelimited(rate, format, args...) \
+		hdd_log_ratelimited_fl(rate, QDF_TRACE_LEVEL_DEBUG,\
+			format, ## args)
 
 #define hdd_log(level, args...) QDF_TRACE(QDF_MODULE_ID_HDD, level, ## args)
 #define hdd_logfl(level, format, args...) hdd_log(level, FL(format), ## args)
@@ -272,6 +310,7 @@
 #define HDD_SESSION_ID_INVALID    0xFF
 
 #define SCAN_REJECT_THRESHOLD_TIME 300000 /* Time is in msec, equal to 5 mins */
+#define SCAN_REJECT_THRESHOLD 15
 
 /* wait time for nud stats in milliseconds */
 #define WLAN_WAIT_TIME_NUD_STATS 800
@@ -279,6 +318,19 @@
 #define WLAN_NUD_STATS_LEN 800
 /* ARP packet type for NUD debug stats */
 #define WLAN_NUD_STATS_ARP_PKT_TYPE 1
+
+/*
+ * @eHDD_DRV_OP_PROBE: Refers to .probe operation
+ * @eHDD_DRV_OP_REMOVE: Refers to .remove operation
+ * @eHDD_DRV_OP_SHUTDOWN: Refers to .shutdown operation
+ * @eHDD_DRV_OP_REINIT: Refers to .reinit operation
+ */
+enum {
+	eHDD_DRV_OP_PROBE = 0,
+	eHDD_DRV_OP_REMOVE,
+	eHDD_DRV_OP_SHUTDOWN,
+	eHDD_DRV_OP_REINIT
+};
 
 /*
  * @eHDD_SCAN_REJECT_DEFAULT: default value
@@ -365,7 +417,7 @@ extern spinlock_t hdd_context_lock;
 extern struct mutex hdd_init_deinit_lock;
 
 #define STATS_CONTEXT_MAGIC 0x53544154  /* STAT */
-#define RSSI_CONTEXT_MAGIC  0x52535349  /* RSSI */
+#define PEER_INFO_CONTEXT_MAGIC 0x50494E46  /* PEER_INFO(PINF) */
 #define POWER_CONTEXT_MAGIC 0x504F5752  /* POWR */
 #define SNR_CONTEXT_MAGIC   0x534E5200  /* SNR */
 #define LINK_CONTEXT_MAGIC  0x4C494E4B  /* LINKSPEED */
@@ -434,6 +486,11 @@ typedef struct hdd_tx_rx_stats_s {
 	__u32    txflow_pause_cnt;
 	__u32    txflow_unpause_cnt;
 	__u32    txflow_timer_cnt;
+
+	/*tx timeout stats*/
+	__u32 tx_timeout_cnt;
+	__u32 cont_txtimeout_cnt;
+	u64 jiffies_last_txtimeout;
 } hdd_tx_rx_stats_t;
 
 #ifdef WLAN_FEATURE_11W
@@ -658,6 +715,8 @@ struct hdd_scan_req {
 	uint32_t scan_id;
 	uint8_t source;
 	uint32_t timestamp;
+	qdf_timer_t hdd_scan_inactivity_timer;
+	uint32_t scan_req_flags;
 };
 
 enum p2p_action_frame_state {
@@ -801,40 +860,117 @@ enum bss_stop_reason {
 	BSS_STOP_DUE_TO_MCC_SCC_SWITCH = 1,
 };
 
-/*
- * Per station structure kept in HDD for multiple station support for SoftAP
+/**
+ * typedef struct hdd_station_info_t - Per station structure kept in HDD for
+ *                                     multiple station support for SoftAP
+ * @isUsed: The station entry is used or not
+ * @ucSTAId: Station ID reported back from HAL (through SAP).
+ *           Broadcast uses station ID zero by default.
+ * @macAddrSTA: MAC address of the station
+ * @tlSTAState: Current Station state so HDD knows how to deal with packet
+ *              queue. Most recent states used to change TLSHIM STA state.
+ * @isQosEnabled: Track QoS status of station
+ * @isDeauthInProgress: The station entry for which Deauth is in progress
+ * @nss: Number of spatial streams supported
+ * @rate_flags: Rate Flags for this connection
+ * @ecsa_capable: Extended CSA capabilities
+ * @max_phy_rate: Calcuated maximum phy rate based on mode, nss, mcs etc.
+ * @tx_packets: Packets send to current station
+ * @tx_bytes: Bytes send to current station
+ * @rx_packets: Packets received from current station
+ * @rx_bytes: Bytes received from current station
+ * @last_tx_rx_ts: Last tx/rx timestamp with current station
+ * @assoc_ts: Current station association timestamp
+ * @tx_rate: Tx rate with current station reported from F/W
+ * @rx_rate: Rx rate with current station reported from F/W
+ * @ampdu: Ampdu enable or not of the station
+ * @sgi_enable: Short GI enable or not of the station
+ * @tx_stbc: Tx Space-time block coding enable/disable
+ * @rx_stbc: Rx Space-time block coding enable/disable
+ * @ch_width: Channel Width of the connection
+ * @mode: Mode of the connection
+ * @max_supp_idx: Max supported rate index of the station
+ * @max_ext_idx: Max extended supported rate index of the station
+ * @max_mcs_idx: Max supported mcs index of the station
+ * @rx_mcs_map: VHT Rx mcs map
+ * @tx_mcs_map: VHT Tx mcs map
  */
 typedef struct {
-	/** The station entry is used or not  */
 	bool isUsed;
-
-	/* Station ID reported back from HAL (through SAP).
-	 * Broadcast uses station ID zero by default
-	 */
 	uint8_t ucSTAId;
-
-	/** MAC address of the station */
 	struct qdf_mac_addr macAddrSTA;
-
-	/** Current Station state so HDD knows how to deal with packet
-	 *  queue. Most recent states used to change TLSHIM STA state
-	 */
 	enum ol_txrx_peer_state tlSTAState;
-
-	/** Track QoS status of station */
 	bool isQosEnabled;
-
-	/** The station entry for which Deauth is in progress  */
 	bool isDeauthInProgress;
-
-	/** Number of spatial streams supported */
 	uint8_t   nss;
-
-	/** Rate Flags for this connection */
 	uint32_t  rate_flags;
-	/** Extended CSA capabilities */
 	uint8_t   ecsa_capable;
+	uint32_t max_phy_rate;
+	uint32_t tx_packets;
+	uint64_t tx_bytes;
+	uint32_t rx_packets;
+	uint64_t rx_bytes;
+	qdf_time_t last_tx_rx_ts;
+	qdf_time_t assoc_ts;
+	uint32_t tx_rate;
+	uint32_t rx_rate;
+	bool ampdu;
+	bool sgi_enable;
+	bool tx_stbc;
+	bool rx_stbc;
+	uint8_t ch_width;
+	uint8_t mode;
+	uint8_t max_supp_idx;
+	uint8_t max_ext_idx;
+	uint8_t max_mcs_idx;
+	uint8_t rx_mcs_map;
+	uint8_t tx_mcs_map;
 } hdd_station_info_t;
+
+/**
+ * struct hdd_rate_info - rate_info in HDD
+ * @rate: tx/rx rate (kbps)
+ * @mode: 0->11abg legacy, 1->HT, 2->VHT (refer to sir_sme_phy_mode)
+ * @nss: number of streams
+ * @mcs: mcs index for HT/VHT mode
+ * @rate_flags: rate flags for last tx/rx
+ *
+ * rate info in HDD
+ */
+struct hdd_rate_info {
+	uint32_t rate;
+	uint8_t mode;
+	uint8_t nss;
+	uint8_t mcs;
+	uint8_t rate_flags;
+};
+
+/**
+ * struct hdd_fw_txrx_stats - fw txrx status in HDD
+ *                            (refer to station_info struct in Kernel)
+ * @tx_packets: packets transmitted to this station
+ * @tx_bytes: bytes transmitted to this station
+ * @rx_packets: packets received from this station
+ * @rx_bytes: bytes received from this station
+ * @rx_retries: cumulative retry counts
+ * @tx_failed: number of failed transmissions
+ * @rssi: The signal strength (dbm)
+ * @tx_rate: last used tx rate info
+ * @rx_rate: last used rx rate info
+ *
+ * fw txrx status in HDD
+ */
+struct hdd_fw_txrx_stats {
+	uint32_t tx_packets;
+	uint64_t tx_bytes;
+	uint32_t rx_packets;
+	uint64_t rx_bytes;
+	uint32_t tx_retries;
+	uint32_t tx_failed;
+	int8_t rssi;
+	struct hdd_rate_info tx_rate;
+	struct hdd_rate_info rx_rate;
+};
 
 struct hdd_ap_ctx_s {
 	hdd_hostapd_state_t HostapdState;
@@ -888,6 +1024,9 @@ struct hdd_ap_ctx_s {
 	bool dfs_cac_block_tx;
 
 	enum bss_stop_reason bss_stop_reason;
+
+	/* Fw txrx stats info */
+	struct hdd_fw_txrx_stats txrx_stats;
 };
 
 typedef struct hdd_scaninfo_s {
@@ -1061,6 +1200,8 @@ struct hdd_adapter_s {
 	hdd_stats_t hdd_stats;
 	/** linkspeed statistics */
 	tSirLinkSpeedInfo ls_stats;
+	/* SAP peer station info */
+	struct sir_peer_sta_info peer_sta_info;
 
 	uint8_t sessionId;
 
@@ -1147,11 +1288,20 @@ struct hdd_adapter_s {
 
 #ifdef WLAN_FEATURE_TSF
 	/* tsf value received from firmware */
-	uint32_t tsf_low;
-	uint32_t tsf_high;
-	/* TSF capture state */
-	enum hdd_tsf_capture_state tsf_state;
+	uint64_t cur_target_time;
 	uint64_t tsf_sync_soc_timer;
+#ifdef WLAN_FEATURE_TSF_PLUS
+	   /* spin lock for read/write timestamps */
+	   qdf_spinlock_t host_target_sync_lock;
+	   qdf_mc_timer_t host_target_sync_timer;
+	   uint64_t cur_host_time;
+	   uint64_t last_host_time;
+	   uint64_t last_target_time;
+	   /* to store the count of continuous invalid tstamp-pair */
+	   int continuous_error_count;
+	   /* to indicate whether tsf_sync has been initialized */
+	   qdf_atomic_t tsf_sync_ready_flag;
+#endif /* WLAN_FEATURE_TSF_PLUS */
 #endif
 
 	hdd_cfg80211_state_t cfg80211State;
@@ -1465,6 +1615,32 @@ struct hdd_nud_stats_context {
 };
 
 /**
+ * struct hdd_scan_chan_info - channel info
+ * @freq: radio frequence
+ * @cmd flag: cmd flag
+ * @noise_floor: noise floor
+ * @cycle_count: cycle count
+ * @rx_clear_count: rx clear count
+ * @tx_frame_count: TX frame count
+ * @delta_cycle_count: delta of cc
+ * @delta_rx_clear_count: delta of rcc
+ * @delta_tx_frame_count: delta of tfc
+ * @clock_freq: clock frequence MHZ
+ */
+struct hdd_scan_chan_info {
+	uint32_t freq;
+	uint32_t cmd_flag;
+	uint32_t noise_floor;
+	uint32_t cycle_count;
+	uint32_t rx_clear_count;
+	uint32_t tx_frame_count;
+	uint32_t delta_cycle_count;
+	uint32_t delta_rx_clear_count;
+	uint32_t delta_tx_frame_count;
+	uint32_t clock_freq;
+};
+
+/**
  * struct sta_ap_intf_check_work_ctx - sta_ap_intf_check_work
  * related info
  * @adapter: adaptor of the interface to which SAP to do SCC
@@ -1473,6 +1649,29 @@ struct hdd_nud_stats_context {
 struct sta_ap_intf_check_work_ctx {
 	hdd_adapter_t *adapter;
 };
+
+enum tos {
+	TOS_BK = 0,
+	TOS_BE = 1,
+	TOS_VI = 2,
+	TOS_VO = 3,
+};
+
+#define HDD_AC_BK_BIT                   1
+#define HDD_AC_BE_BIT                   2
+#define HDD_AC_VI_BIT                   4
+#define HDD_AC_VO_BIT                   8
+
+#define HDD_MAX_OFF_CHAN_TIME_FOR_VO    20
+#define HDD_MAX_OFF_CHAN_TIME_FOR_VI    20
+#define HDD_MAX_OFF_CHAN_TIME_FOR_BE    40
+#define HDD_MAX_OFF_CHAN_TIME_FOR_BK    40
+
+#define HDD_MAX_AC                      4
+#define HDD_MAX_OFF_CHAN_ENTRIES        2
+
+#define HDD_AC_BIT_INDX                 0
+#define HDD_DWELL_TIME_INDX             1
 
 enum hdd_sta_smps_param {
 	/* RSSI threshold to enter Dynamic SMPS mode from inactive mode */
@@ -1523,8 +1722,6 @@ struct hdd_context_s {
 	/** Config values read from qcom_cfg.ini file */
 	struct hdd_config *config;
 
-	struct wlan_hdd_ftm_status ftm;
-
 	/* Completion  variable to indicate Mc Thread Suspended */
 	struct completion mc_sus_event_var;
 
@@ -1571,7 +1768,6 @@ struct hdd_context_s {
 	uint16_t max_num_tdls_sta;
 	/* TDLS peer connected count */
 	uint16_t connected_peer_count;
-	tdls_scan_context_t tdls_scan_ctxt;
 	/* Lock to avoid race condition during TDLS operations */
 	qdf_spinlock_t tdls_ct_spinlock;
 	/*linear mac address table for counting the packets*/
@@ -1765,23 +1961,27 @@ struct hdd_context_s {
 	struct suspend_resume_stats suspend_resume_stats;
 	struct hdd_runtime_pm_context runtime_context;
 	bool roaming_in_progress;
+	struct hdd_scan_chan_info *chan_info;
+	struct mutex chan_info_lock;
 	/* bit map to set/reset TDLS by different sources */
 	unsigned long tdls_source_bitmap;
 	/* tdls source timer to enable/disable TDLS on p2p listen */
 	qdf_mc_timer_t tdls_source_timer;
 	qdf_atomic_t disable_lro_in_concurrency;
 	qdf_atomic_t disable_lro_in_low_tput;
+	qdf_atomic_t vendor_disable_lro_flag;
 	bool fw_mem_dump_enabled;
 	uint8_t last_scan_reject_session_id;
 	scan_reject_states last_scan_reject_reason;
 	unsigned long last_scan_reject_timestamp;
+	uint8_t scan_reject_cnt;
 	uint8_t beacon_probe_rsp_cnt_per_scan;
 	bool rcpi_enabled;
 	bool imps_enabled;
 	int user_configured_pkt_filter_rules;
 	uint8_t curr_band;
 	uint32_t no_of_probe_req_ouis;
-	struct vendor_oui *probe_req_voui;
+	uint32_t *probe_req_voui;
 	struct hdd_nud_stats_context nud_stats_context;
 	uint32_t track_arp_ip;
 	uint8_t bt_a2dp_active:1;
@@ -1790,7 +1990,16 @@ struct hdd_context_s {
 	struct vdev_spectral_configure_params ss_config;
 	int sscan_pid;
 #endif
+#ifdef WLAN_FEATURE_TSF
+	/* indicate whether tsf has been initialized */
+	qdf_atomic_t tsf_ready_flag;
+	/* indicate whether it's now capturing tsf(updating tstamp-pair) */
+	qdf_atomic_t cap_tsf_flag;
+	/* the context that is capturing tsf */
+	hdd_adapter_t *cap_tsf_context;
+#endif
 	struct sta_ap_intf_check_work_ctx *sta_ap_intf_check_work_info;
+	uint8_t active_ac;
 };
 
 int hdd_validate_channel_and_bandwidth(hdd_adapter_t *adapter,
@@ -1892,6 +2101,13 @@ int wlan_hdd_validate_context(hdd_context_t *pHddCtx);
  */
 int hdd_validate_adapter(hdd_adapter_t *adapter);
 
+/**
+ * wlan_hdd_validate_context_in_loading() - check the HDD context in loading
+ * @hdd_ctx:	HDD context pointer
+ *
+ * Return: 0 if the context is valid. Error code otherwise
+ */
+int wlan_hdd_validate_context_in_loading(hdd_context_t *hdd_ctx);
 bool hdd_is_valid_mac_address(const uint8_t *pMacAddr);
 QDF_STATUS hdd_issta_p2p_clientconnected(hdd_context_t *pHddCtx);
 bool wlan_hdd_modules_are_enabled(hdd_context_t *hdd_ctx);
@@ -2016,25 +2232,25 @@ bool hdd_is_5g_supported(hdd_context_t *pHddCtx);
 
 int wlan_hdd_scan_abort(hdd_adapter_t *pAdapter);
 
-#ifdef FEATURE_WLAN_LFR
-static inline bool hdd_driver_roaming_supported(hdd_context_t *hdd_ctx)
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+static inline bool roaming_offload_enabled(hdd_context_t *hdd_ctx)
 {
-	return hdd_ctx->cfg_ini->isFastRoamIniFeatureEnabled;
+	return hdd_ctx->config->isRoamOffloadEnabled;
 }
 #else
-static inline bool hdd_driver_roaming_supported(hdd_context_t *hdd_ctx)
+static inline bool roaming_offload_enabled(hdd_context_t *hdd_ctx)
 {
 	return false;
 }
 #endif
 
-#ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
-static inline bool hdd_firmware_roaming_supported(hdd_context_t *hdd_ctx)
+#ifdef WLAN_FEATURE_HOST_ROAM
+static inline bool hdd_driver_roaming_supported(hdd_context_t *hdd_ctx)
 {
-	return hdd_ctx->cfg_ini->isRoamOffloadScanEnabled;
+	return hdd_ctx->config->isFastRoamIniFeatureEnabled;
 }
 #else
-static inline bool hdd_firmware_roaming_supported(hdd_context_t *hdd_ctx)
+static inline bool hdd_driver_roaming_supported(hdd_context_t *hdd_ctx)
 {
 	return false;
 }
@@ -2045,7 +2261,7 @@ static inline bool hdd_roaming_supported(hdd_context_t *hdd_ctx)
 	bool val;
 
 	val = hdd_driver_roaming_supported(hdd_ctx) ||
-		hdd_firmware_roaming_supported(hdd_ctx);
+		roaming_offload_enabled(hdd_ctx);
 
 	return val;
 }
@@ -2075,12 +2291,12 @@ void hdd_get_fw_version(hdd_context_t *hdd_ctx,
  *
  * Return: true if supported and false otherwise
  */
-static inline bool hdd_is_memdump_supported(void)
+static inline bool hdd_is_memdump_supported(hdd_context_t *hdd_ctx)
 {
-	return true;
+	return hdd_ctx->fw_mem_dump_enabled;
 }
 #else
-static inline bool hdd_is_memdump_supported(void)
+static inline bool hdd_is_memdump_supported(hdd_context_t *hdd_ctx)
 {
 	return false;
 }
@@ -2149,7 +2365,8 @@ int hdd_update_config(hdd_context_t *hdd_ctx);
 
 QDF_STATUS hdd_chan_change_notify(hdd_adapter_t *adapter,
 		struct net_device *dev,
-		struct hdd_chan_change_params chan_change);
+		struct hdd_chan_change_params chan_change,
+		bool legacy_phymode);
 int wlan_hdd_set_channel(struct wiphy *wiphy,
 		struct net_device *dev,
 		struct cfg80211_chan_def *chandef,
@@ -2228,18 +2445,6 @@ static inline void wlan_hdd_restart_sap(hdd_adapter_t *ap_adapter)
 }
 #endif
 
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-static inline bool roaming_offload_enabled(hdd_context_t *hdd_ctx)
-{
-	return hdd_ctx->config->isRoamOffloadEnabled;
-}
-#else
-static inline bool roaming_offload_enabled(hdd_context_t *hdd_ctx)
-{
-	return false;
-}
-#endif
-
 void hdd_get_ibss_peer_info_cb(void *pUserData,
 				tSirPeerInfoRspParams *pPeerInfo);
 
@@ -2299,7 +2504,16 @@ int hdd_wlan_start_modules(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 int hdd_wlan_stop_modules(hdd_context_t *hdd_ctx, bool ftm_mode);
 int hdd_start_adapter(hdd_adapter_t *adapter);
 void hdd_populate_random_mac_addr(hdd_context_t *hdd_ctx, uint32_t num);
-
+/**
+ * hdd_is_interface_up()- Checkfor interface up before ssr
+ * @hdd_ctx: HDD context
+ *
+ * check  if there are any wlan interfaces before SSR accordingly start
+ * the interface.
+ *
+ * Return: 0 if interface was opened else false
+ */
+bool hdd_is_interface_up(hdd_adapter_t *adapter);
 /**
  * hdd_get_bss_entry() - Get the bss entry matching the chan, bssid and ssid
  * @wiphy: wiphy
@@ -2341,6 +2555,35 @@ void hdd_unsafe_channel_restart_sap(hdd_context_t *hdd_ctx);
 int hdd_enable_disable_ca_event(hdd_context_t *hddctx,
 				uint8_t set_value);
 void wlan_hdd_undo_acs(hdd_adapter_t *adapter);
+
+/**
+ * hdd_clone_local_unsafe_chan() - clone hdd ctx unsafe chan list
+ * @hdd_ctx: hdd context pointer
+ * @local_unsafe_list: copied unsafe chan list array
+ * @local_unsafe_list_count: channel number in returned local_unsafe_list
+ *
+ * The function will allocate memory and make a copy the current unsafe
+ * channels from hdd ctx. The caller need to free the local_unsafe_list
+ * memory after use.
+ *
+ * Return: 0 if successfully clone unsafe chan list.
+ */
+int hdd_clone_local_unsafe_chan(hdd_context_t *hdd_ctx,
+	uint16_t **local_unsafe_list, uint16_t *local_unsafe_list_count);
+
+/**
+ * hdd_local_unsafe_channel_updated() - check unsafe chan list same or not
+ * @hdd_ctx: hdd context pointer
+ * @local_unsafe_list: unsafe chan list to be compared with hdd_ctx's list
+ * @local_unsafe_list_count: channel number in local_unsafe_list
+ *
+ * The function checked the input channel is same as current unsafe chan
+ * list in hdd_ctx.
+ *
+ * Return: true if input channel list is same as the list in hdd_ctx
+ */
+bool hdd_local_unsafe_channel_updated(hdd_context_t *hdd_ctx,
+	uint16_t *local_unsafe_list, uint16_t local_unsafe_list_count);
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0))
 static inline int
@@ -2439,7 +2682,9 @@ void hdd_chip_pwr_save_fail_detected_cb(void *hdd_ctx,
 				struct chip_pwr_save_fail_detected_params
 				*data);
 
-#if defined(WLAN_FEATURE_FILS_SK) && defined(CFG80211_FILS_SK_OFFLOAD_SUPPORT)
+#if defined(WLAN_FEATURE_FILS_SK) && \
+	(defined(CFG80211_FILS_SK_OFFLOAD_SUPPORT) || \
+		 (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)))
 /**
  * hdd_clear_fils_connection_info: API to clear fils info from roam profile and
  * free allocated memory
@@ -2465,4 +2710,72 @@ static inline void hdd_clear_fils_connection_info(hdd_adapter_t *adapter)
 int hdd_get_rssi_snr_by_bssid(hdd_adapter_t *adapter, const uint8_t *bssid,
 			      int8_t *rssi, int8_t *snr);
 
+/**
+ * hdd_dp_trace_init() - initialize DP Trace by calling the QDF API
+ * @config: hdd config
+ *
+ * Return: NONE
+ */
+void hdd_dp_trace_init(struct hdd_config *config);
+
+/**
+ * hdd_set_limit_off_chan_for_tos() - set limit off-chan command parameters
+ * @adapter: pointer adapter context
+ * @tos: type of service
+ * @status: status of the traffic (active/inactive)
+ *
+ * This function updates the limit off-channel command parameters to WMA
+ *
+ * Return: 0 on success or non zero value on failure
+ */
+int hdd_set_limit_off_chan_for_tos(hdd_adapter_t *adapter, enum tos tos,
+		bool is_tos_active);
+
+#if defined(WLAN_FEATURE_FILS_SK)
+/**
+ * hdd_update_hlp_info() - Update HLP packet received in FILS (re)assoc rsp
+ * @dev: net device
+ * @roam_fils_params: Fils join rsp params
+ *
+ * This API is used to send the received HLP packet in Assoc rsp(FILS AKM)
+ * to the network layer.
+ *
+ * Return: None
+ */
+void hdd_update_hlp_info(struct net_device *dev, tCsrRoamInfo *roam_info);
+#else
+static inline void hdd_update_hlp_info(struct net_device *dev,
+				       tCsrRoamInfo *roam_info)
+{}
+#endif
+
+/**
+ * hdd_drv_ops_inactivity_handler() - Timeout handler for driver ops
+ * inactivity timer
+ *
+ * Return: None
+ */
+void hdd_drv_ops_inactivity_handler(void);
+
+/**
+ * hdd_start_driver_ops_timer() - Starts driver ops inactivity timer
+ * @drv_op: Enum indicating driver op
+ *
+ * Return: none
+ */
+void hdd_start_driver_ops_timer(int drv_op);
+
+/**
+ * hdd_stop_driver_ops_timer() - Stops driver ops inactivity timer
+ *
+ * Return: none
+ */
+void hdd_stop_driver_ops_timer(void);
+
+/**
+ * hdd_pld_ipa_uc_shutdown_pipes() - Disconnect IPA WDI pipes during PDR
+ *
+ * Return: None
+ */
+void hdd_pld_ipa_uc_shutdown_pipes(void);
 #endif /* end #if !defined(WLAN_HDD_MAIN_H) */

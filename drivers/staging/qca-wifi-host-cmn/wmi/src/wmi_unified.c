@@ -564,10 +564,12 @@ wmi_print_cmd_log_buffer(struct wmi_log_buf_t *log_buffer, uint32_t count,
 		long long us = qdf_log_timestamp_to_usecs(cmd_log->time);
 		int len = 0;
 		int i;
+		long long s = qdf_do_div(us, 1000000);
+		long long us_mod = qdf_do_mod(us, 1000000);
 
 		len += scnprintf(str + len, sizeof(str) - len,
 				 "% 8lld.%06lld    %6u (0x%06x)    ",
-				 us / 1000000, us % 1000000,
+				 s, us_mod,
 				 cmd_log->command, cmd_log->command);
 		for (i = 0; i < data_len; ++i) {
 			len += scnprintf(str + len, sizeof(str) - len,
@@ -617,10 +619,12 @@ wmi_print_event_log_buffer(struct wmi_log_buf_t *log_buffer, uint32_t count,
 		long long us = qdf_log_timestamp_to_usecs(event_log->time);
 		int len = 0;
 		int i;
+		long long s = qdf_do_div(us, 1000000);
+		long long us_mod = qdf_do_mod(us, 1000000);
 
 		len += scnprintf(str + len, sizeof(str) - len,
 				 "% 8lld.%06lld    %6u (0x%06x)    ",
-				 us / 1000000, us % 1000000,
+				 s, us_mod,
 				 event_log->event, event_log->event);
 		for (i = 0; i < data_len; ++i) {
 			len += scnprintf(str + len, sizeof(str) - len,
@@ -1285,7 +1289,7 @@ QDF_STATUS wmi_unified_cmd_send(wmi_unified_t wmi_handle, wmi_buf_t buf,
 				uint32_t len, uint32_t cmd_id)
 {
 	HTC_PACKET *pkt;
-	A_STATUS status;
+	QDF_STATUS status;
 	uint16_t htc_tag = 0;
 
 	if (wmi_get_runtime_pm_inprogress(wmi_handle)) {
@@ -1376,15 +1380,13 @@ QDF_STATUS wmi_unified_cmd_send(wmi_unified_t wmi_handle, wmi_buf_t buf,
 
 	status = htc_send_pkt(wmi_handle->htc_handle, pkt);
 
-	if (A_OK != status) {
+	if (QDF_STATUS_SUCCESS != status) {
 		qdf_atomic_dec(&wmi_handle->pending_cmds);
 		QDF_TRACE(QDF_MODULE_ID_WMI, QDF_TRACE_LEVEL_ERROR,
 		   "%s %d, htc_send_pkt failed", __func__, __LINE__);
 		qdf_mem_free(pkt);
-
+		return status;
 	}
-	if (status)
-		return QDF_STATUS_E_FAILURE;
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -1591,9 +1593,8 @@ static void wmi_control_rx(void *ctx, HTC_PACKET *htc_packet)
 	id = WMI_GET_FIELD(qdf_nbuf_data(evt_buf), WMI_CMD_HDR, COMMANDID);
 	idx = wmi_unified_get_event_handler_ix(wmi_handle, id);
 	if (qdf_unlikely(idx == A_ERROR)) {
-		qdf_print
-		("%s :event handler is not registered: event id 0x%x\n",
-			__func__, id);
+		WMI_LOGD("%s :event handler is not registered: event id 0x%x\n",
+				 __func__, id);
 		qdf_nbuf_free(evt_buf);
 		return;
 	}
@@ -1709,6 +1710,30 @@ end:
 
 }
 
+#define WMI_WQ_WD_TIMEOUT (10 * 1000) /* 10s */
+
+static inline void wmi_workqueue_watchdog_warn(uint16_t msg_type_id)
+{
+	QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
+		  "%s: Message type %x has exceeded its alloted time of %ds",
+		  __func__, msg_type_id, WMI_WQ_WD_TIMEOUT / 1000);
+}
+
+#ifdef CONFIG_SLUB_DEBUG_ON
+static void wmi_workqueue_watchdog_bite(void *arg)
+{
+	wmi_workqueue_watchdog_warn(*(uint16_t *)arg);
+	QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
+		  "%s: Going down for WMI WQ Watchdog Bite!", __func__);
+	QDF_BUG(0);
+}
+#else
+static inline void wmi_workqueue_watchdog_bite(void *arg)
+{
+	wmi_workqueue_watchdog_warn(*(uint16_t *)arg);
+}
+#endif
+
 /**
  * wmi_rx_event_work() - process rx event in rx work queue context
  * @arg: opaque pointer to wmi handle
@@ -1721,16 +1746,26 @@ static void wmi_rx_event_work(void *arg)
 {
 	wmi_buf_t buf;
 	struct wmi_unified *wmi = arg;
+	qdf_timer_t wd_timer;
+	uint16_t wd_msg_type_id;
 
+	/* initialize WMI workqueue watchdog timer */
+	qdf_timer_init(NULL, &wd_timer, &wmi_workqueue_watchdog_bite,
+			&wd_msg_type_id, QDF_TIMER_TYPE_SW);
 	qdf_spin_lock_bh(&wmi->eventq_lock);
 	buf = qdf_nbuf_queue_remove(&wmi->event_queue);
 	qdf_spin_unlock_bh(&wmi->eventq_lock);
 	while (buf) {
+		qdf_timer_start(&wd_timer, WMI_WQ_WD_TIMEOUT);
+		wd_msg_type_id =
+		   WMI_GET_FIELD(qdf_nbuf_data(buf), WMI_CMD_HDR, COMMANDID);
 		__wmi_control_rx(wmi, buf);
+		qdf_timer_stop(&wd_timer);
 		qdf_spin_lock_bh(&wmi->eventq_lock);
 		buf = qdf_nbuf_queue_remove(&wmi->event_queue);
 		qdf_spin_unlock_bh(&wmi->eventq_lock);
 	}
+	qdf_timer_free(&wd_timer);
 }
 
 #ifdef FEATURE_RUNTIME_PM
@@ -1861,6 +1896,10 @@ void wmi_unified_detach(struct wmi_unified *wmi_handle)
 		qdf_nbuf_free(buf);
 		buf = qdf_nbuf_queue_remove(&wmi_handle->event_queue);
 	}
+
+	/* Free events logs list */
+	if (wmi_handle->events_logs_list)
+		qdf_mem_free(wmi_handle->events_logs_list);
 
 #ifdef WMI_INTERFACE_EVENT_LOGGING
 	wmi_log_buffer_free(wmi_handle);

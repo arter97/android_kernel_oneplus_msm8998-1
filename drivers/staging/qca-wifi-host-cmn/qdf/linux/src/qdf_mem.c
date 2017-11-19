@@ -58,8 +58,9 @@
 
 #ifdef MEMORY_DEBUG
 #include <qdf_list.h>
-qdf_list_t qdf_mem_list;
-qdf_spinlock_t qdf_mem_list_lock;
+static qdf_list_t qdf_mem_list;
+static qdf_list_t qdf_mem_trash_list;
+static qdf_spinlock_t qdf_mem_list_lock;
 
 static uint8_t WLAN_MEM_HEADER[] = { 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
 					0x67, 0x68 };
@@ -96,19 +97,58 @@ u_int8_t prealloc_disabled = 1;
 qdf_declare_param(prealloc_disabled, byte);
 qdf_export_symbol(prealloc_disabled);
 
-#if defined WLAN_DEBUGFS && defined MEMORY_DEBUG
+
+
+
+
+#if defined WLAN_DEBUGFS
+
+/* Debugfs root directory for qdf_mem */
+static struct dentry *qdf_mem_debugfs_root;
 
 /**
  * struct __qdf_mem_stat - qdf memory statistics
  * @kmalloc:	total kmalloc allocations
  * @dma:	total dma allocations
+ * @skb:	total skb allocations
  */
 static struct __qdf_mem_stat {
 	qdf_atomic_t kmalloc;
 	qdf_atomic_t dma;
+	qdf_atomic_t skb;
 } qdf_mem_stat;
 
+static inline void qdf_mem_kmalloc_inc(qdf_size_t size)
+{
+	qdf_atomic_add(size, &qdf_mem_stat.kmalloc);
+}
 
+static inline void qdf_mem_dma_inc(qdf_size_t size)
+{
+	qdf_atomic_add(size, &qdf_mem_stat.dma);
+}
+
+void qdf_mem_skb_inc(qdf_size_t size)
+{
+	qdf_atomic_add(size, &qdf_mem_stat.skb);
+}
+
+static inline void qdf_mem_kmalloc_dec(qdf_size_t size)
+{
+	qdf_atomic_sub(size, &qdf_mem_stat.kmalloc);
+}
+
+static inline void qdf_mem_dma_dec(qdf_size_t size)
+{
+	qdf_atomic_sub(size, &qdf_mem_stat.dma);
+}
+
+void qdf_mem_skb_dec(qdf_size_t size)
+{
+	qdf_atomic_sub(size, &qdf_mem_stat.skb);
+}
+
+#ifdef MEMORY_DEBUG
 /**
  * struct __qdf_mem_info - memory statistics
  * @file_name:	the file which allocated memory
@@ -124,8 +164,6 @@ struct __qdf_mem_info {
 	unsigned int count;
 };
 
-/* Debugfs root directory for qdf_mem */
-static struct dentry *qdf_mem_debugfs_root;
 
 /*
  * A table to identify duplicates in close proximity. The table depth defines
@@ -135,25 +173,6 @@ static struct dentry *qdf_mem_debugfs_root;
 #define QDF_MEM_STAT_TABLE_SIZE 4
 static struct __qdf_mem_info qdf_mem_info_table[QDF_MEM_STAT_TABLE_SIZE];
 
-static inline void qdf_mem_kmalloc_inc(qdf_size_t size)
-{
-	qdf_atomic_add(size, &qdf_mem_stat.kmalloc);
-}
-
-static inline void qdf_mem_dma_inc(qdf_size_t size)
-{
-	qdf_atomic_add(size, &qdf_mem_stat.dma);
-}
-
-static inline void qdf_mem_kmalloc_dec(qdf_size_t size)
-{
-	qdf_atomic_sub(size, &qdf_mem_stat.kmalloc);
-}
-
-static inline void qdf_mem_dma_dec(qdf_size_t size)
-{
-	qdf_atomic_sub(size, &qdf_mem_stat.dma);
-}
 
 
 /**
@@ -426,11 +445,46 @@ static const struct file_operations fops_qdf_mem_debugfs = {
 	.release = seq_release,
 };
 
-/**
- * qdf_mem_debugfs_init() - initialize routine
- *
- * Return: QDF_STATUS
- */
+static QDF_STATUS qdf_mem_debug_debugfs_init(void)
+{
+	if (!qdf_mem_debugfs_root)
+		return QDF_STATUS_E_FAILURE;
+
+	debugfs_create_file("list",
+			    S_IRUSR,
+			    qdf_mem_debugfs_root,
+			    NULL,
+			    &fops_qdf_mem_debugfs);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS qdf_mem_debug_debugfs_exit(void)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+#else /* MEMORY_DEBUG */
+
+static QDF_STATUS qdf_mem_debug_debugfs_init(void)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static QDF_STATUS qdf_mem_debug_debugfs_exit(void)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+#endif /* MEMORY_DEBUG */
+
+
+static void qdf_mem_debugfs_exit(void)
+{
+	debugfs_remove_recursive(qdf_mem_debugfs_root);
+	qdf_mem_debugfs_root = NULL;
+}
+
 static QDF_STATUS qdf_mem_debugfs_init(void)
 {
 	struct dentry *qdf_debugfs_root = qdf_debugfs_get_root();
@@ -443,45 +497,32 @@ static QDF_STATUS qdf_mem_debugfs_init(void)
 	if (!qdf_mem_debugfs_root)
 		return QDF_STATUS_E_FAILURE;
 
-	debugfs_create_file("list",
-			    S_IRUSR | S_IWUSR,
-			    qdf_mem_debugfs_root,
-			    NULL,
-			    &fops_qdf_mem_debugfs);
 
 	debugfs_create_atomic_t("kmalloc",
-				S_IRUSR | S_IWUSR,
+				S_IRUSR,
 				qdf_mem_debugfs_root,
 				&qdf_mem_stat.kmalloc);
 
 	debugfs_create_atomic_t("dma",
-				S_IRUSR | S_IWUSR,
+				S_IRUSR,
 				qdf_mem_debugfs_root,
 				&qdf_mem_stat.dma);
+
+	debugfs_create_atomic_t("skb",
+				S_IRUSR,
+				qdf_mem_debugfs_root,
+				&qdf_mem_stat.skb);
 
 	return QDF_STATUS_SUCCESS;
 }
 
-
-/**
- * qdf_mem_debugfs_exit() - cleanup routine
- *
- * Return: None
- */
-static void qdf_mem_debugfs_exit(void)
-{
-	debugfs_remove_recursive(qdf_mem_debugfs_root);
-	qdf_mem_debugfs_root = NULL;
-}
-
-#else /* WLAN_DEBUGFS && MEMORY_DEBUG */
+#else /* WLAN_DEBUGFS */
 
 static inline void qdf_mem_kmalloc_inc(qdf_size_t size) {}
 static inline void qdf_mem_dma_inc(qdf_size_t size) {}
 static inline void qdf_mem_kmalloc_dec(qdf_size_t size) {}
 static inline void qdf_mem_dma_dec(qdf_size_t size) {}
 
-#ifdef MEMORY_DEBUG
 
 static QDF_STATUS qdf_mem_debugfs_init(void)
 {
@@ -489,9 +530,18 @@ static QDF_STATUS qdf_mem_debugfs_init(void)
 }
 static void qdf_mem_debugfs_exit(void) {}
 
-#endif
 
-#endif /* WLAN_DEBUGFS && MEMORY_DEBUG */
+static QDF_STATUS qdf_mem_debug_debugfs_init(void)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static QDF_STATUS qdf_mem_debug_debugfs_exit(void)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+#endif /* WLAN_DEBUGFS */
 
 /**
  * __qdf_mempool_init() - Create and initialize memory pool
@@ -767,26 +817,44 @@ static inline bool qdf_mem_prealloc_put(void *ptr)
 #ifdef MEMORY_DEBUG
 
 /**
- * qdf_mem_init() - initialize qdf memory debug functionality
+ * qdf_mem_debug_init() - initialize qdf memory debug functionality
  *
  * Return: none
  */
-void qdf_mem_init(void)
+static void qdf_mem_debug_init(void)
 {
 	/* Initalizing the list with maximum size of 60000 */
 	qdf_list_create(&qdf_mem_list, 60000);
+	qdf_list_create(&qdf_mem_trash_list, 60000);
 	qdf_spinlock_create(&qdf_mem_list_lock);
 	qdf_net_buf_debug_init();
-	qdf_mem_debugfs_init();
 }
-qdf_export_symbol(qdf_mem_init);
+
+#ifdef CONFIG_HALT_KMEMLEAK
+static void qdf_handle_leaked_memory(qdf_list_node_t *node)
+{
+	/* do not free the leaked memory if halt on memleak is enabled
+	 * such that leaked memory does not get poisoned and can be
+	 * used for offline debugging
+	 */
+	qdf_spin_lock(&qdf_mem_list_lock);
+	qdf_list_insert_front(&qdf_mem_trash_list, node);
+	qdf_spin_unlock(&qdf_mem_list_lock);
+}
+#else
+static void qdf_handle_leaked_memory(qdf_list_node_t *node)
+{
+	kfree((void *)node);
+}
+#endif
 
 /**
- * qdf_mem_clean() - display memory leak debug info and free leaked pointers
+ * qdf_mem_debug_clean() - display memory leak debug info and free leaked
+ * pointers
  *
  * Return: none
  */
-void qdf_mem_clean(void)
+static void qdf_mem_debug_clean(void)
 {
 	uint32_t list_size;
 
@@ -836,7 +904,7 @@ void qdf_mem_clean(void)
 					mleak_cnt = 0;
 				}
 				mleak_cnt++;
-				kfree((void *)mem_struct);
+				qdf_handle_leaked_memory(node);
 			}
 		} while (qdf_status == QDF_STATUS_SUCCESS);
 
@@ -848,25 +916,23 @@ void qdf_mem_clean(void)
 				  prev_mleak_line_num, prev_mleak_sz);
 		}
 #ifdef CONFIG_HALT_KMEMLEAK
-		BUG_ON(1);
+		QDF_BUG(0);
 #endif
 	}
 }
-qdf_export_symbol(qdf_mem_clean);
 
 /**
- * qdf_mem_exit() - exit qdf memory debug functionality
+ * qdf_mem_debug_exit() - exit qdf memory debug functionality
  *
  * Return: none
  */
-void qdf_mem_exit(void)
+static void qdf_mem_debug_exit(void)
 {
-	qdf_mem_debugfs_exit();
 	qdf_net_buf_debug_exit();
-	qdf_mem_clean();
+	qdf_mem_debug_clean();
 	qdf_list_destroy(&qdf_mem_list);
+	qdf_spinlock_destroy(&qdf_mem_list_lock);
 }
-qdf_export_symbol(qdf_mem_exit);
 
 /**
  * qdf_mem_malloc_debug() - debug version of QDF memory allocation API
@@ -928,7 +994,7 @@ void *qdf_mem_malloc_debug(size_t size,
 		mem_struct->line_num = line_num;
 		mem_struct->size = size;
 		qdf_atomic_inc(&mem_struct->in_use);
-		qdf_mem_kmalloc_inc(size);
+		qdf_mem_kmalloc_inc(ksize(mem_struct));
 
 		qdf_mem_copy(&mem_struct->header[0],
 			     &WLAN_MEM_HEADER[0], sizeof(WLAN_MEM_HEADER));
@@ -1017,8 +1083,6 @@ void qdf_mem_free(void *ptr)
 	if (qdf_mem_prealloc_put(ptr))
 		return;
 
-	if (!qdf_atomic_dec_and_test(&mem_struct->in_use))
-		return;
 
 	qdf_spin_lock_irqsave(&qdf_mem_list_lock);
 
@@ -1048,6 +1112,11 @@ void qdf_mem_free(void *ptr)
 			&WLAN_MEM_TAIL[0], sizeof(WLAN_MEM_TAIL)))
 		goto error;
 
+	if (!qdf_atomic_dec_and_test(&mem_struct->in_use)) {
+		qdf_spin_unlock_irqrestore(&qdf_mem_list_lock);
+		return;
+	}
+
 	/*
 	 * make the node an empty list before doing the spin unlock
 	 * The empty list check will guarantee that we avoid a race condition.
@@ -1055,7 +1124,7 @@ void qdf_mem_free(void *ptr)
 	list_del_init(&mem_struct->node);
 	qdf_mem_list.count--;
 	qdf_spin_unlock_irqrestore(&qdf_mem_list_lock);
-	qdf_mem_kmalloc_dec(mem_struct->size);
+	qdf_mem_kmalloc_dec(ksize(mem_struct));
 	kfree(mem_struct);
 	return;
 
@@ -1099,6 +1168,9 @@ error:
 }
 qdf_export_symbol(qdf_mem_free);
 #else
+static void qdf_mem_debug_init(void) {}
+
+static void qdf_mem_debug_exit(void) {}
 
 /**
  * qdf_mem_malloc() - allocation QDF memory
@@ -1124,7 +1196,13 @@ void *qdf_mem_malloc(size_t size)
 	if (in_interrupt() || irqs_disabled())
 		flags = GFP_ATOMIC;
 
-	return kzalloc(size, flags);
+	mem = kzalloc(size, flags);
+
+	if (mem)
+		qdf_mem_kmalloc_inc(ksize(mem));
+
+	return mem;
+
 }
 qdf_export_symbol(qdf_mem_malloc);
 
@@ -1143,6 +1221,8 @@ void qdf_mem_free(void *ptr)
 
 	if (qdf_mem_prealloc_put(ptr))
 		return;
+
+	qdf_mem_kmalloc_dec(ksize(ptr));
 
 	kfree(ptr);
 }
@@ -1320,7 +1400,7 @@ void qdf_mem_copy(void *dst_addr, const void *src_addr, uint32_t num_bytes)
 
 	if ((dst_addr == NULL) || (src_addr == NULL)) {
 		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "%s called with NULL parameter, source:%p destination:%p",
+			  "%s called with NULL parameter, source:%pK destination:%pK",
 			  __func__, src_addr, dst_addr);
 		QDF_ASSERT(0);
 		return;
@@ -1394,7 +1474,7 @@ void qdf_mem_move(void *dst_addr, const void *src_addr, uint32_t num_bytes)
 
 	if ((dst_addr == NULL) || (src_addr == NULL)) {
 		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "%s called with NULL parameter, source:%p destination:%p",
+			  "%s called with NULL parameter, source:%pK destination:%pK",
 			  __func__, src_addr, dst_addr);
 		QDF_ASSERT(0);
 		return;
@@ -1424,6 +1504,8 @@ void *qdf_mem_alloc_consistent(qdf_device_t osdev, void *dev, qdf_size_t size,
 	 * of different size" warning on some platforms
 	 */
 	BUILD_BUG_ON(sizeof(*phy_addr) < sizeof(vaddr));
+	if (vaddr)
+		qdf_mem_dma_inc(ksize(vaddr));
 	return vaddr;
 }
 
@@ -1464,6 +1546,7 @@ inline void qdf_mem_free_consistent(qdf_device_t osdev, void *dev,
 				    qdf_dma_addr_t phy_addr,
 				    qdf_dma_context_t memctx)
 {
+	qdf_mem_dma_dec(ksize(vaddr));
 	qdf_mem_free(vaddr);
 	return;
 }
@@ -1521,3 +1604,19 @@ void qdf_mem_dma_sync_single_for_cpu(qdf_device_t osdev,
 	dma_sync_single_for_cpu(osdev->dev, bus_addr,  size, direction);
 }
 qdf_export_symbol(qdf_mem_dma_sync_single_for_cpu);
+
+void qdf_mem_init(void)
+{
+	qdf_mem_debug_init();
+	qdf_mem_debugfs_init();
+	qdf_mem_debug_debugfs_init();
+}
+qdf_export_symbol(qdf_mem_init);
+
+void qdf_mem_exit(void)
+{
+	qdf_mem_debug_debugfs_exit();
+	qdf_mem_debugfs_exit();
+	qdf_mem_debug_exit();
+}
+qdf_export_symbol(qdf_mem_exit);

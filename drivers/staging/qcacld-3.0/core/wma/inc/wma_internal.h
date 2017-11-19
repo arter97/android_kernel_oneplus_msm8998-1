@@ -128,6 +128,9 @@
 /* Time(in ms) to detect DOS attack */
 #define WMA_MGMT_FRAME_DETECT_DOS_TIMER 1000
 
+#define MAX_NUM_HW_MODE    0xff
+#define MAX_NUM_PHY        0xff
+
 /**
  * struct index_data_rate_type - non vht data rate type
  * @mcs_index: mcs rate index
@@ -162,8 +165,42 @@ int
 wmi_unified_pdev_set_param(wmi_unified_t wmi_handle, WMI_PDEV_PARAM param_id,
 			   uint32_t param_value);
 
+/**
+ * wma_send_msg_by_priority() - Send wma message to PE with priority.
+ * @wma_handle: wma handle
+ * @msg_type: message type
+ * @body_ptr: message body ptr
+ * @body_val: message body value
+ * @is_high_priority: if msg is high priority
+ *
+ * Return: none
+ */
+void wma_send_msg_by_priority(tp_wma_handle wma_handle, uint16_t msg_type,
+		void *body_ptr, uint32_t body_val, int is_high_priority);
+
+/**
+ * wma_send_msg() - Send wma message to PE.
+ * @wma_handle: wma handle
+ * @msg_type: message type
+ * @body_ptr: message body ptr
+ * @body_val: message body value
+ *
+ * Return: none
+ */
 void wma_send_msg(tp_wma_handle wma_handle, uint16_t msg_type,
 			 void *body_ptr, uint32_t body_val);
+/**
+ * wma_send_msg_high_priority() - Send wma message to PE with high priority.
+ * @wma_handle: wma handle
+ * @msg_type: message type
+ * @body_ptr: message body ptr
+ * @body_val: message body value
+ *
+ * Return: none
+ */
+void wma_send_msg_high_priority(tp_wma_handle wma_handle, uint16_t msg_type,
+			void *body_ptr, uint32_t body_val);
+
 
 void wma_data_tx_ack_comp_hdlr(void *wma_context,
 				      qdf_nbuf_t netbuf, int32_t status);
@@ -456,7 +493,7 @@ void *wma_find_vdev_by_addr(tp_wma_handle wma, uint8_t *addr,
  */
 static inline void *wma_find_vdev_by_id(tp_wma_handle wma, uint8_t vdev_id)
 {
-	if (vdev_id > wma->max_bssid)
+	if (vdev_id >= wma->max_bssid)
 		return NULL;
 
 	return wma->interfaces[vdev_id].handle;
@@ -755,7 +792,14 @@ void wma_set_bss_rate_flags(struct wma_txrx_node *iface,
 
 int32_t wmi_unified_send_txbf(tp_wma_handle wma, tpAddStaParams params);
 
-void wma_update_txrx_chainmask(int num_rf_chains, int *cmd_value);
+/**
+ * wma_check_txrx_chainmask() - check txrx chainmask
+ * @num_rf_chains: number of rf chains
+ * @cmd_value: command value
+ *
+ * Return: QDF_STATUS_SUCCESS for success or error code
+ */
+QDF_STATUS wma_check_txrx_chainmask(int num_rf_chains, int cmd_value);
 
 int wma_peer_state_change_event_handler(void *handle,
 					       uint8_t *event_buff,
@@ -927,6 +971,34 @@ QDF_STATUS wma_process_lphb_conf_req(tp_wma_handle wma_handle,
 QDF_STATUS wma_process_dhcp_ind(tp_wma_handle wma_handle,
 				tAniDHCPInd *ta_dhcp_ind);
 
+QDF_STATUS wma_get_peer_info(WMA_HANDLE handle,
+				struct sir_peer_info_req *peer_info_req);
+
+/**
+ * wma_get_peer_info_ext() - get peer info
+ * @handle: wma interface
+ * @peer_info_req: get peer info request information
+ *
+ * This function will send WMI_REQUEST_PEER_STATS_INFO_CMDID to FW
+ *
+ * Return: 0 on success, otherwise error value
+ */
+QDF_STATUS wma_get_peer_info_ext(WMA_HANDLE handle,
+				struct sir_peer_info_ext_req *peer_info_req);
+
+/**
+ * wma_peer_info_event_handler() - Handler for WMI_PEER_STATS_INFO_EVENTID
+ * @handle: WMA global handle
+ * @cmd_param_info: Command event data
+ * @len: Length of cmd_param_info
+ *
+ * This function will handle WMI_PEER_STATS_INFO_EVENTID
+ *
+ * Return: 0 on success, error code otherwise
+ */
+int wma_peer_info_event_handler(void *handle, u_int8_t *cmd_param_info,
+				   u_int32_t len);
+
 int wma_profile_data_report_event_handler(void *handle, uint8_t *event_buf,
 				       uint32_t len);
 
@@ -965,7 +1037,8 @@ wma_unified_dfs_phyerr_filter_offload_enable(tp_wma_handle wma_handle);
 QDF_STATUS wma_pktlog_wmi_send_cmd(WMA_HANDLE handle,
 				   struct ath_pktlog_wmi_params *params);
 #endif
-
+int wma_d0_wow_disable_ack_event(void *handle, u_int8_t *event,
+				u_int32_t len);
 int wma_wow_wakeup_host_event(void *handle, uint8_t *event,
 				     uint32_t len);
 int wma_pdev_resume_event_handler(void *handle, uint8_t *event, uint32_t len);

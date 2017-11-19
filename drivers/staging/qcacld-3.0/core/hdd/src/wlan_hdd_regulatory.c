@@ -251,9 +251,9 @@ static void hdd_regulatory_wiphy_init(hdd_context_t *hdd_ctx,
 	 * disable 2.4 Ghz channels that dont have 20 mhz bw
 	 */
 	for (chan_num = 0;
-	     chan_num < wiphy->bands[NL80211_BAND_2GHZ]->n_channels;
+	     chan_num < wiphy->bands[HDD_NL80211_BAND_2GHZ]->n_channels;
 	     chan_num++) {
-		chan = &(wiphy->bands[NL80211_BAND_2GHZ]->channels[chan_num]);
+		chan = &(wiphy->bands[HDD_NL80211_BAND_2GHZ]->channels[chan_num]);
 		if (chan->flags & IEEE80211_CHAN_NO_20MHZ)
 			chan->flags |= IEEE80211_CHAN_DISABLED;
 	}
@@ -502,7 +502,12 @@ int hdd_regulatory_init(hdd_context_t *hdd_ctx, struct wiphy *wiphy)
 
 	hdd_process_regulatory_data(hdd_ctx, wiphy, true);
 
-	reg_info->cc_src = SOURCE_DRIVER;
+	if (hdd_is_world_regdomain(reg_info->reg_domain))
+		reg_info->cc_src = SOURCE_CORE;
+	else
+		reg_info->cc_src = SOURCE_DRIVER;
+
+	sme_set_cc_src(hdd_ctx->hHal, reg_info->cc_src);
 
 	cds_put_default_country(reg_info->alpha2);
 
@@ -624,7 +629,8 @@ void hdd_reg_notifier(struct wiphy *wiphy,
 		return;
 	}
 
-	if (cds_is_driver_unloading() || cds_is_driver_recovering()) {
+	if (cds_is_driver_unloading() || cds_is_driver_recovering() ||
+	    cds_is_driver_in_bad_state()) {
 		hdd_err("%s: unloading or ssr in progress, ignore",
 			__func__);
 		return;
@@ -642,11 +648,11 @@ void hdd_reg_notifier(struct wiphy *wiphy,
 
 	if (('K' == request->alpha2[0]) &&
 	    ('R' == request->alpha2[1]))
-		request->dfs_region = DFS_KR_REGION;
+		request->dfs_region = (enum nl80211_dfs_regions) DFS_KR_REGION;
 
 	if (('C' == request->alpha2[0]) &&
 	    ('N' == request->alpha2[1]))
-		request->dfs_region = DFS_CN_REGION;
+		request->dfs_region = (enum nl80211_dfs_regions) DFS_CN_REGION;
 
 	/* first check if this callback is in response to the driver callback */
 
@@ -684,13 +690,22 @@ void hdd_reg_notifier(struct wiphy *wiphy,
 
 		if (NL80211_REGDOM_SET_BY_CORE == request->initiator) {
 			hdd_ctx->reg.cc_src = SOURCE_CORE;
+			pld_set_cc_source(hdd_ctx->parent_dev,
+						PLD_SOURCE_CORE);
+			sme_set_cc_src(hdd_ctx->hHal, SOURCE_CORE);
 			if (is_wiphy_custom_regulatory(wiphy))
 				reset = true;
 		} else if (NL80211_REGDOM_SET_BY_DRIVER == request->initiator) {
 			hdd_ctx->reg.cc_src = SOURCE_DRIVER;
 			sme_set_cc_src(hdd_ctx->hHal, SOURCE_DRIVER);
 		} else {
-			hdd_ctx->reg.cc_src = SOURCE_USERSPACE;
+			sme_set_cc_src(hdd_ctx->hHal, SOURCE_USERSPACE);
+
+			if (pld_get_cc_source(hdd_ctx->parent_dev)
+							== PLD_SOURCE_11D)
+				hdd_ctx->reg.cc_src = SOURCE_11D;
+			else
+				hdd_ctx->reg.cc_src = SOURCE_USERSPACE;
 			hdd_restore_custom_reg_settings(wiphy,
 							request->alpha2,
 							&reset);
@@ -708,7 +723,8 @@ void hdd_reg_notifier(struct wiphy *wiphy,
 
 		cds_fill_and_send_ctl_to_fw(&hdd_ctx->reg);
 
-		hdd_set_dfs_region(hdd_ctx, request->dfs_region);
+		hdd_set_dfs_region(hdd_ctx,
+				   (enum dfs_region) request->dfs_region);
 
 		cds_get_dfs_region(&dfs_reg);
 		cds_set_wma_dfs_region(dfs_reg);

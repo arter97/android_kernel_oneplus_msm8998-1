@@ -284,7 +284,7 @@ second_connection_pcl_nodbs_table[CDS_MAX_ONE_CONNECTION_MODE]
 			[CDS_MAX_NUM_OF_MODE][CDS_MAX_CONC_PRIORITY_MODE] = {
 	[CDS_STA_24_1x1] = {
 	[CDS_STA_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH},
-	[CDS_SAP_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
+	[CDS_SAP_MODE] = {CDS_SCC_CH_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_P2P_CLIENT_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_P2P_GO_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_IBSS_MODE] = {
@@ -292,7 +292,7 @@ second_connection_pcl_nodbs_table[CDS_MAX_ONE_CONNECTION_MODE]
 
 	[CDS_STA_24_2x2] = {
 	[CDS_STA_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH},
-	[CDS_SAP_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
+	[CDS_SAP_MODE] = {CDS_SCC_CH_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_P2P_CLIENT_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_P2P_GO_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_IBSS_MODE] = {
@@ -316,7 +316,7 @@ second_connection_pcl_nodbs_table[CDS_MAX_ONE_CONNECTION_MODE]
 
 	[CDS_P2P_CLI_24_1x1] = {
 	[CDS_STA_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH},
-	[CDS_SAP_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
+	[CDS_SAP_MODE] = {CDS_SCC_CH_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_P2P_CLIENT_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_P2P_GO_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_IBSS_MODE] = {
@@ -324,7 +324,7 @@ second_connection_pcl_nodbs_table[CDS_MAX_ONE_CONNECTION_MODE]
 
 	[CDS_P2P_CLI_24_2x2] = {
 	[CDS_STA_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH},
-	[CDS_SAP_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
+	[CDS_SAP_MODE] = {CDS_SCC_CH_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_P2P_CLIENT_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_P2P_GO_MODE] = {CDS_5G, CDS_SCC_CH, CDS_SCC_CH_5G},
 	[CDS_IBSS_MODE] = {
@@ -1155,7 +1155,7 @@ static const enum cds_pcl_type
 third_connection_pcl_nodbs_table[CDS_MAX_TWO_CONNECTION_MODE]
 			[CDS_MAX_NUM_OF_MODE][CDS_MAX_CONC_PRIORITY_MODE] = {
 	[CDS_STA_SAP_SCC_24_1x1] = {
-	[CDS_STA_MODE] = {CDS_5G,        CDS_SCC_CH, CDS_SCC_CH},
+	[CDS_STA_MODE] = {CDS_SCC_CH_5G, CDS_SCC_CH, CDS_SCC_CH},
 	[CDS_SAP_MODE] = {CDS_SCC_CH_5G, CDS_SCC_CH, CDS_SCC_CH},
 	[CDS_P2P_CLIENT_MODE] = {
 		CDS_MAX_PCL_TYPE, CDS_MAX_PCL_TYPE, CDS_MAX_PCL_TYPE},
@@ -1165,7 +1165,7 @@ third_connection_pcl_nodbs_table[CDS_MAX_TWO_CONNECTION_MODE]
 		CDS_MAX_PCL_TYPE, CDS_MAX_PCL_TYPE, CDS_MAX_PCL_TYPE} },
 
 	[CDS_STA_SAP_SCC_24_2x2] = {
-	[CDS_STA_MODE] = {CDS_5G,        CDS_SCC_CH, CDS_SCC_CH},
+	[CDS_STA_MODE] = {CDS_SCC_CH_5G, CDS_SCC_CH, CDS_SCC_CH},
 	[CDS_SAP_MODE] = {CDS_SCC_CH_5G, CDS_SCC_CH, CDS_SCC_CH},
 	[CDS_P2P_CLIENT_MODE] = {
 		CDS_MAX_PCL_TYPE, CDS_MAX_PCL_TYPE, CDS_MAX_PCL_TYPE},
@@ -2115,6 +2115,51 @@ bool cds_set_connection_in_progress(bool value)
 }
 
 /**
+ * cds_current_concurrency_is_mcc() - To check the current
+ * concurrency combination if it is doing MCC
+ *
+ * This routine is called to check if it is doing MCC
+ *
+ * Return: True - MCC, False - Otherwise
+ */
+static bool cds_current_concurrency_is_mcc(void)
+{
+	uint32_t num_connections;
+	bool is_mcc = false;
+
+	num_connections = cds_get_connection_count();
+
+	switch (num_connections) {
+	case 1:
+		break;
+	case 2:
+		if ((conc_connection_list[0].chan !=
+			conc_connection_list[1].chan) &&
+		    (conc_connection_list[0].mac ==
+			conc_connection_list[1].mac)) {
+			is_mcc = true;
+		}
+		break;
+	case 3:
+		if ((conc_connection_list[0].chan !=
+			conc_connection_list[1].chan) ||
+		    (conc_connection_list[0].chan !=
+			conc_connection_list[2].chan) ||
+		    (conc_connection_list[1].chan !=
+			conc_connection_list[2].chan)){
+			is_mcc = true;
+		}
+		break;
+	default:
+		cds_err("unexpected num_connections value %d",
+			num_connections);
+		break;
+	}
+
+	return is_mcc;
+}
+
+/**
  * cds_update_conc_list() - Update the concurrent connection list
  * @conn_index: Connection index
  * @mode: Mode
@@ -2140,6 +2185,7 @@ static void cds_update_conc_list(uint32_t conn_index,
 		bool in_use)
 {
 	cds_context_type *cds_ctx;
+	bool mcc_mode;
 
 	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
 	if (!cds_ctx) {
@@ -2152,6 +2198,8 @@ static void cds_update_conc_list(uint32_t conn_index,
 			conn_index);
 		return;
 	}
+
+	qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
 	conc_connection_list[conn_index].mode = mode;
 	conc_connection_list[conn_index].chan = chan;
 	conc_connection_list[conn_index].bw = bw;
@@ -2160,11 +2208,22 @@ static void cds_update_conc_list(uint32_t conn_index,
 	conc_connection_list[conn_index].original_nss = original_nss;
 	conc_connection_list[conn_index].vdev_id = vdev_id;
 	conc_connection_list[conn_index].in_use = in_use;
+	qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
 
 	cds_dump_connection_status_info();
 	if (cds_ctx->ol_txrx_update_mac_id_cb)
 		cds_ctx->ol_txrx_update_mac_id_cb(vdev_id, mac);
 
+
+	/* IPA only cares about STA or SAP mode */
+	if (mode == CDS_STA_MODE || mode == CDS_SAP_MODE) {
+		qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
+		mcc_mode = cds_current_concurrency_is_mcc();
+		qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
+
+		if (cds_ctx->hdd_ipa_set_mcc_mode_cb)
+			cds_ctx->hdd_ipa_set_mcc_mode_cb(mcc_mode);
+	}
 }
 
 /**
@@ -2294,7 +2353,9 @@ QDF_STATUS cds_check_conn_with_mode_and_vdev_id(enum cds_con_mode mode,
 /**
  * cds_store_and_del_conn_info() - Store and del a connection info
  * @mode: Mode whose entry has to be deleted
- * @info: Struture pointer where the connection info will be saved
+ * @all_matching_cxn_to_del: All the specified mode entries should be deleted
+ * @info: Struture array pointer where the connection info will be saved
+ * @num_cxn_del: Number of connection which are going to be deleted
  *
  * Saves the connection info corresponding to the provided mode
  * and deleted that corresponding entry based on vdev from the
@@ -2303,13 +2364,18 @@ QDF_STATUS cds_check_conn_with_mode_and_vdev_id(enum cds_con_mode mode,
  * Return: None
  */
 static void cds_store_and_del_conn_info(enum cds_con_mode mode,
-				struct cds_conc_connection_info *info)
+	bool all_matching_cxn_to_del,
+	struct cds_conc_connection_info *info, uint8_t *num_cxn_del)
 {
 	uint32_t conn_index = 0;
-	bool found = false;
+	uint32_t found_index = 0;
 	cds_context_type *cds_ctx;
 
-	qdf_mem_zero(info, sizeof(*info));
+	if (!num_cxn_del) {
+		cds_err("num_cxn_del is NULL");
+		return;
+	}
+	*num_cxn_del = 0;
 	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
 	if (!cds_ctx) {
 		cds_err("Invalid CDS Context");
@@ -2319,34 +2385,48 @@ static void cds_store_and_del_conn_info(enum cds_con_mode mode,
 	qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
 	while (CONC_CONNECTION_LIST_VALID_INDEX(conn_index)) {
 		if (mode == conc_connection_list[conn_index].mode) {
-			found = true;
-			break;
+			/*
+			 * Storing the connection entry which will be
+			 * temporarily deleted.
+			 */
+			info[found_index] =
+				conc_connection_list[conn_index];
+			/* Deleting the connection entry */
+			cds_decr_connection_count(
+				info[found_index].vdev_id);
+			cds_debug("Stored %d (%d), deleted STA entry with vdev id %d, index %d",
+				info[found_index].vdev_id,
+				info[found_index].mode,
+				info[found_index].vdev_id, conn_index);
+			found_index++;
+			if (all_matching_cxn_to_del)
+				continue;
+			else
+				break;
 		}
 		conn_index++;
 	}
-
-	if (!found) {
-		qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
-		cds_err("Mode:%d not available in the conn info", mode);
-		return;
-	}
-
-	/* Storing the STA entry which will be temporarily deleted */
-	*info = conc_connection_list[conn_index];
 	qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
 
-	/* Deleting the STA entry */
-	cds_decr_connection_count(info->vdev_id);
+	if (!found_index) {
+		*num_cxn_del = 0;
+		cds_err("Mode:%d not available in the conn info", mode);
+	} else {
+		*num_cxn_del = found_index;
+		cds_info("Mode:%d number of conn %d temp del",
+			mode, *num_cxn_del);
+	}
 
-	cds_debug("Stored %d (%d), deleted STA entry with vdev id %d, index %d",
-		info->vdev_id, info->mode, info->vdev_id, conn_index);
-
-	/* Caller should set the PCL and restore the STA entry in conn info */
+	/*
+	 * Caller should set the PCL and restore the connection entry
+	 * in conn info.
+	 */
 }
 
 /**
  * cds_restore_deleted_conn_info() - Restore connection info
- * @info: Saved connection info that is to be restored
+ * @info: An array saving connection info that is to be restored
+ * @num_cxn_del: Number of connection temporary deleted
  *
  * Restores the connection info of STA that was saved before
  * updating the PCL to the FW
@@ -2354,10 +2434,16 @@ static void cds_store_and_del_conn_info(enum cds_con_mode mode,
  * Return: None
  */
 static void cds_restore_deleted_conn_info(
-					struct cds_conc_connection_info *info)
+	struct cds_conc_connection_info *info, uint8_t num_cxn_del)
 {
 	uint32_t conn_index;
 	cds_context_type *cds_ctx;
+
+	if (MAX_NUMBER_OF_CONC_CONNECTIONS <= num_cxn_del || 0 == num_cxn_del) {
+		cds_err("Failed to restore %d/%d deleted information",
+			num_cxn_del, MAX_NUMBER_OF_CONC_CONNECTIONS);
+		return;
+	}
 
 	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
 	if (!cds_ctx) {
@@ -2373,7 +2459,8 @@ static void cds_restore_deleted_conn_info(
 	}
 
 	qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
-	conc_connection_list[conn_index] = *info;
+	qdf_mem_copy(&conc_connection_list[conn_index], info,
+			num_cxn_del * sizeof(*info));
 	qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
 
 	cds_debug("Restored the deleted conn info, vdev:%d, index:%d",
@@ -2826,7 +2913,7 @@ bool cds_is_connection_in_progress(uint8_t *session_id,
 			&& (eConnectionState_Connecting ==
 				(WLAN_HDD_GET_STATION_CTX_PTR(adapter))->
 					conn_info.connState)) {
-			cds_err("%p(%d) Connection is in progress",
+			cds_debug("%pK(%d) Connection is in progress",
 				WLAN_HDD_GET_STATION_CTX_PTR(adapter),
 				adapter->sessionId);
 			if (session_id && reason) {
@@ -2844,7 +2931,7 @@ bool cds_is_connection_in_progress(uint8_t *session_id,
 					WLAN_HDD_GET_HAL_CTX(adapter),
 					adapter->sessionId)) ||
 				hdd_is_roaming_in_progress(adapter)) {
-			cds_err("%p(%d) Reassociation in progress",
+			cds_debug("%pK(%d) Reassociation in progress",
 				WLAN_HDD_GET_STATION_CTX_PTR(adapter),
 				adapter->sessionId);
 			if (session_id && reason) {
@@ -2864,7 +2951,7 @@ bool cds_is_connection_in_progress(uint8_t *session_id,
 				hdd_sta_ctx->conn_info.uIsAuthenticated)) {
 				sta_mac = (uint8_t *)
 					&(adapter->macAddressCurrent.bytes[0]);
-				cds_err("client " MAC_ADDRESS_STR
+				cds_debug("client " MAC_ADDRESS_STR
 					" is in middle of WPS/EAPOL exchange.",
 					MAC_ADDR_ARRAY(sta_mac));
 				if (session_id && reason) {
@@ -2885,7 +2972,7 @@ bool cds_is_connection_in_progress(uint8_t *session_id,
 				sta_mac = (uint8_t *)
 						&(adapter->aStaInfo[sta_id].
 							macAddrSTA.bytes[0]);
-				cds_err("client " MAC_ADDRESS_STR
+				cds_debug("client " MAC_ADDRESS_STR
 				" of SAP/GO is in middle of WPS/EAPOL exchange",
 				MAC_ADDR_ARRAY(sta_mac));
 				if (session_id && reason) {
@@ -2895,7 +2982,7 @@ bool cds_is_connection_in_progress(uint8_t *session_id,
 				return true;
 			}
 			if (hdd_ctx->connection_in_progress) {
-				cds_err("AP/GO: connection is in progress");
+				cds_debug("AP/GO: connection is in progress");
 				return true;
 			}
 		}
@@ -3228,51 +3315,6 @@ static void cds_dump_current_concurrency(void)
 }
 
 /**
- * cds_current_concurrency_is_mcc() - To check the current
- * concurrency combination if it is doing MCC
- *
- * This routine is called to check if it is doing MCC
- *
- * Return: True - MCC, False - Otherwise
- */
-static bool cds_current_concurrency_is_mcc(void)
-{
-	uint32_t num_connections = 0;
-	bool is_mcc = false;
-
-	num_connections = cds_get_connection_count();
-
-	switch (num_connections) {
-	case 1:
-		break;
-	case 2:
-		if ((conc_connection_list[0].chan !=
-			conc_connection_list[1].chan) &&
-		    (conc_connection_list[0].mac ==
-			conc_connection_list[1].mac)) {
-			is_mcc = true;
-		}
-		break;
-	case 3:
-		if ((conc_connection_list[0].chan !=
-			conc_connection_list[1].chan) ||
-		    (conc_connection_list[0].chan !=
-			conc_connection_list[2].chan) ||
-		    (conc_connection_list[1].chan !=
-			conc_connection_list[2].chan)){
-				is_mcc = true;
-		}
-		break;
-	default:
-		cds_err("unexpected num_connections value %d",
-			num_connections);
-		break;
-	}
-
-	return is_mcc;
-}
-
-/**
  * cds_dump_concurrency_info() - To dump concurrency info
  *
  * This routine is called to dump the concurrency info
@@ -3561,9 +3603,6 @@ void cds_dump_concurrency_info(void)
 		status = hdd_get_next_adapter(hdd_ctx, adapterNode, &pNext);
 		adapterNode = pNext;
 	}
-	qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
-	hdd_ctx->mcc_mode = cds_current_concurrency_is_mcc();
-	qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
 }
 
 #ifdef FEATURE_WLAN_TDLS
@@ -3618,10 +3657,10 @@ void cds_set_tdls_ct_mode(hdd_context_t *hdd_ctx)
 	    (!hdd_ctx->config->fEnableTDLSImplicitTrigger)) {
 		state = false;
 		goto set_state;
-	} else if (cds_mode_specific_connection_count(QDF_STA_MODE,
+	} else if (cds_mode_specific_connection_count(CDS_STA_MODE,
 						      NULL) == 1) {
 		state = true;
-	} else if (cds_mode_specific_connection_count(QDF_P2P_CLIENT_MODE,
+	} else if (cds_mode_specific_connection_count(CDS_P2P_CLIENT_MODE,
 						      NULL) == 1){
 		state = true;
 	} else {
@@ -3746,6 +3785,7 @@ void cds_clear_concurrency_mode(enum tQDF_ADAPTER_MODE mode)
  *
  * Return: None
  */
+#if defined(QCA_WIFI_3_0)
 static void cds_pdev_set_pcl(enum tQDF_ADAPTER_MODE mode)
 {
 	QDF_STATUS status;
@@ -3797,7 +3837,11 @@ static void cds_pdev_set_pcl(enum tQDF_ADAPTER_MODE mode)
 	else
 		cds_debug("Set PCL to FW for mode:%d", mode);
 }
-
+#else
+static void cds_pdev_set_pcl(enum tQDF_ADAPTER_MODE mode)
+{
+}
+#endif
 
 /**
  * cds_set_pcl_for_existing_combo() - Set PCL for existing connection
@@ -3809,7 +3853,9 @@ static void cds_pdev_set_pcl(enum tQDF_ADAPTER_MODE mode)
  */
 static void cds_set_pcl_for_existing_combo(enum cds_con_mode mode)
 {
-	struct cds_conc_connection_info info;
+	struct cds_conc_connection_info
+				info[MAX_NUMBER_OF_CONC_CONNECTIONS] = { {0} };
+	uint8_t num_cxn_del = 0;
 	enum tQDF_ADAPTER_MODE pcl_mode;
 	cds_context_type *cds_ctx;
 
@@ -3841,14 +3887,14 @@ static void cds_set_pcl_for_existing_combo(enum cds_con_mode mode)
 	qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
 	if (cds_mode_specific_connection_count(mode, NULL) > 0) {
 		/* Check, store and temp delete the mode's parameter */
-		cds_store_and_del_conn_info(mode, &info);
+		cds_store_and_del_conn_info(mode, false, info, &num_cxn_del);
 		qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
 		/* Set the PCL to the FW since connection got updated */
 		cds_pdev_set_pcl(pcl_mode);
 		qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
 		cds_debug("Set PCL to FW for mode:%d", mode);
 		/* Restore the connection info */
-		cds_restore_deleted_conn_info(&info);
+		cds_restore_deleted_conn_info(info, num_cxn_del);
 	}
 	qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
 }
@@ -4048,6 +4094,7 @@ done:
  * @len: Pointer to the length of the PCL
  * @pcl_weight: Pointer to the weights of the PCL
  * @weight_len: Max length of the weights list
+ * @all_matching_cxn_to_del: Need remove all entries before getting pcl
  *
  * Get the PCL for an existing connection
  *
@@ -4055,10 +4102,12 @@ done:
  */
 QDF_STATUS cds_get_pcl_for_existing_conn(enum cds_con_mode mode,
 			uint8_t *pcl_ch, uint32_t *len,
-			uint8_t *pcl_weight, uint32_t weight_len)
+			uint8_t *pcl_weight, uint32_t weight_len,
+			bool all_matching_cxn_to_del)
 {
-	struct cds_conc_connection_info info;
-
+	struct cds_conc_connection_info
+				info[MAX_NUMBER_OF_CONC_CONNECTIONS] = { {0} };
+	uint8_t num_cxn_del = 0;
 	cds_context_type *cds_ctx;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
@@ -4071,12 +4120,13 @@ QDF_STATUS cds_get_pcl_for_existing_conn(enum cds_con_mode mode,
 	qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
 	if (cds_mode_specific_connection_count(mode, NULL) > 0) {
 		/* Check, store and temp delete the mode's parameter */
-		cds_store_and_del_conn_info(mode, &info);
+		cds_store_and_del_conn_info(mode, all_matching_cxn_to_del,
+					info, &num_cxn_del);
 		/* Get the PCL */
 		status = cds_get_pcl(mode, pcl_ch, len, pcl_weight, weight_len);
 		cds_debug("Get PCL to FW for mode:%d", mode);
 		/* Restore the connection info */
-		cds_restore_deleted_conn_info(&info);
+		cds_restore_deleted_conn_info(info, num_cxn_del);
 	}
 	qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
 	return status;
@@ -4159,6 +4209,7 @@ QDF_STATUS cds_decr_active_session(enum tQDF_ADAPTER_MODE mode,
 	cds_context_type *cds_ctx;
 	hdd_adapter_t *sap_adapter;
 	QDF_STATUS qdf_status;
+	bool mcc_mode;
 
 	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
 	if (!cds_ctx) {
@@ -4229,6 +4280,19 @@ QDF_STATUS cds_decr_active_session(enum tQDF_ADAPTER_MODE mode,
 	cds_set_tdls_ct_mode(hdd_ctx);
 
 	cds_dump_current_concurrency();
+
+	/*
+	 * Check mode of entry being removed. Update mcc_mode only when STA
+	 * or SAP since IPA only cares about these two.
+	 */
+	if (mode == QDF_STA_MODE || mode == QDF_SAP_MODE) {
+		qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
+		mcc_mode = cds_current_concurrency_is_mcc();
+		qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
+
+		if (cds_ctx->hdd_ipa_set_mcc_mode_cb)
+			cds_ctx->hdd_ipa_set_mcc_mode_cb(mcc_mode);
+	}
 
 	return qdf_status;
 }
@@ -5437,6 +5501,7 @@ QDF_STATUS cds_get_pcl(enum cds_con_mode mode,
 	enum cds_two_connection_mode third_index = 0;
 	enum cds_pcl_type pcl = CDS_NONE;
 	enum cds_conc_priority_mode conc_system_pref = 0;
+	enum cds_conc_priority_mode cur_conc_system_pref = 0;
 	hdd_context_t *hdd_ctx;
 
 	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
@@ -5447,10 +5512,13 @@ QDF_STATUS cds_get_pcl(enum cds_con_mode mode,
 
 	/* find the current connection state from conc_connection_list*/
 	num_connections = cds_get_connection_count();
-	cds_debug("connections:%d pref:%d requested mode:%d",
-		num_connections, hdd_ctx->config->conc_system_pref, mode);
 
-	switch (hdd_ctx->config->conc_system_pref) {
+	cur_conc_system_pref = cds_get_cur_conc_system_pref();
+
+	cds_debug("connections:%d pref:%d requested mode:%d",
+		num_connections, cur_conc_system_pref, mode);
+
+	switch (cur_conc_system_pref) {
 	case 0:
 		conc_system_pref = CDS_THROUGHPUT;
 		break;
@@ -5462,7 +5530,7 @@ QDF_STATUS cds_get_pcl(enum cds_con_mode mode,
 		break;
 	default:
 		cds_err("unknown conc_system_pref value %d",
-			hdd_ctx->config->conc_system_pref);
+			cur_conc_system_pref);
 		break;
 	}
 
@@ -5948,17 +6016,13 @@ done:
  */
 enum cds_conc_priority_mode cds_get_first_connection_pcl_table_index(void)
 {
-	hdd_context_t *hdd_ctx;
+	enum cds_conc_priority_mode cur_conc_system_pref;
 
-	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
-	if (!hdd_ctx) {
-		cds_err("HDD context is NULL");
-		return CDS_THROUGHPUT;
-	}
+	cur_conc_system_pref = cds_get_cur_conc_system_pref();
 
-	if (hdd_ctx->config->conc_system_pref >= CDS_MAX_CONC_PRIORITY_MODE)
+	if (cur_conc_system_pref >= CDS_MAX_CONC_PRIORITY_MODE)
 		return CDS_THROUGHPUT;
-	return hdd_ctx->config->conc_system_pref;
+	return cur_conc_system_pref;
 }
 
 /**
@@ -6069,7 +6133,7 @@ enum cds_one_connection_mode cds_get_second_connection_pcl_table_index(void)
  */
 enum cds_two_connection_mode cds_get_third_connection_pcl_table_index(void)
 {
-	enum cds_one_connection_mode index = CDS_MAX_TWO_CONNECTION_MODE;
+	enum cds_two_connection_mode index = CDS_MAX_TWO_CONNECTION_MODE;
 	cds_context_type *cds_ctx;
 
 	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
@@ -7167,11 +7231,11 @@ static bool cds_sta_p2pgo_concur_handle(hdd_adapter_t *sta_adapter,
 			if (p2pgo_channel_num <= 14) {
 				freq = ieee80211_channel_to_frequency(
 						p2pgo_channel_num,
-						NL80211_BAND_2GHZ);
+						HDD_NL80211_BAND_2GHZ);
 			} else {
 				freq = ieee80211_channel_to_frequency(
 						p2pgo_channel_num,
-						NL80211_BAND_5GHZ);
+						HDD_NL80211_BAND_5GHZ);
 			}
 			qdf_mem_zero(&hdd_avoid_freq_list,
 					sizeof(hdd_avoid_freq_list));
@@ -7661,7 +7725,6 @@ static void __cds_check_sta_ap_concurrent_ch_intf(void *data)
 	} else {
 		cds_restart_sap(ap_adapter);
 	}
-
 end:
 	if (work_info) {
 		qdf_mem_free(work_info);
@@ -9017,7 +9080,8 @@ cds_get_nondfs_preferred_channel(enum cds_con_mode mode,
 
 		if (QDF_STATUS_SUCCESS != cds_get_pcl_for_existing_conn(mode,
 					&pcl_channels[0], &pcl_len,
-					pcl_weight, QDF_ARRAY_SIZE(pcl_weight)))
+					pcl_weight, QDF_ARRAY_SIZE(pcl_weight),
+					false))
 			return channel;
 	} else {
 		if (QDF_STATUS_SUCCESS != cds_get_pcl(mode,
@@ -9595,7 +9659,8 @@ QDF_STATUS cds_get_sap_mandatory_channel(uint32_t *chan)
 
 	status = cds_get_pcl_for_existing_conn(CDS_SAP_MODE,
 			pcl.pcl_list, &pcl.pcl_len,
-			pcl.weight_list, QDF_ARRAY_SIZE(pcl.weight_list));
+			pcl.weight_list, QDF_ARRAY_SIZE(pcl.weight_list),
+			false);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		cds_err("Unable to get PCL for SAP");
 		return status;
@@ -9748,7 +9813,9 @@ QDF_STATUS cds_get_valid_chan_weights(struct sir_pcl_chan_weights *weight,
 {
 	uint32_t i, j;
 	cds_context_type *cds_ctx;
-	struct cds_conc_connection_info info;
+	struct cds_conc_connection_info
+				info[MAX_NUMBER_OF_CONC_CONNECTIONS] = { {0} };
+	uint8_t num_cxn_del = 0;
 
 	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
 	if (!cds_ctx) {
@@ -9782,7 +9849,8 @@ QDF_STATUS cds_get_valid_chan_weights(struct sir_pcl_chan_weights *weight,
 		 * check can be used as though a new connection is coming up,
 		 * allowing to detect the disallowed channels.
 		 */
-		cds_store_and_del_conn_info(CDS_STA_MODE, &info);
+		cds_store_and_del_conn_info(CDS_STA_MODE, false,
+						info, &num_cxn_del);
 		for (i = 0; i < weight->saved_num_chan; i++) {
 			if (cds_allow_concurrency(CDS_STA_MODE,
 						  weight->saved_chan_list[i],
@@ -9792,7 +9860,7 @@ QDF_STATUS cds_get_valid_chan_weights(struct sir_pcl_chan_weights *weight,
 			}
 		}
 		/* Restore the connection info */
-		cds_restore_deleted_conn_info(&info);
+		cds_restore_deleted_conn_info(info, num_cxn_del);
 	}
 	qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
 
@@ -10299,6 +10367,11 @@ void cds_save_wlan_unsafe_channels(uint16_t *unsafe_channel_list,
 	uint8_t channel_loop;
 	cds_context_type *cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
 
+	if (!cds_ctx) {
+		cds_err("Invalid CDS Context");
+		return;
+	}
+
 	if (unsafe_channel_count < NUM_CHANNELS)
 		cds_ctx->unsafe_channel_count = unsafe_channel_count;
 	else
@@ -10319,4 +10392,42 @@ void cds_save_wlan_unsafe_channels(uint16_t *unsafe_channel_list,
 		cds_debug("channel %d is not safe ",
 			cds_ctx->unsafe_channel_list[channel_loop]);
 	}
+}
+
+/**
+ * cds_set_cur_conc_system_pref() - set the value of cur_conc_system_pref
+ * @conc_system_pref: value of conc_system_pref
+ * This function overwrites the conc_system_pref with the user preference
+ *
+ * Return: None
+ */
+void cds_set_cur_conc_system_pref(uint8_t conc_system_pref)
+{
+	cds_context_type *cds_ctx;
+
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+	if (!cds_ctx) {
+		cds_err("cds_ctx is NULL");
+		return;
+	}
+	cds_ctx->cur_conc_system_pref = conc_system_pref;
+}
+
+/**
+ * cds_get_cur_conc_system() - read the value of cur_conc_system_pref
+ *
+ * This function reads the value of current conc_system_pref value
+ *
+ * Return: current conc_system_pref
+ */
+uint8_t cds_get_cur_conc_system_pref(void)
+{
+	cds_context_type *cds_ctx;
+
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+	if (!cds_ctx) {
+		cds_err("cds_ctx is NULL");
+		return CDS_THROUGHPUT;
+	}
+	return cds_ctx->cur_conc_system_pref;
 }

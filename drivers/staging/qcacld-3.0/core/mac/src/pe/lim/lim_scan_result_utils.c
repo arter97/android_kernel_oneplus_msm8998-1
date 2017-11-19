@@ -90,6 +90,7 @@ static inline void populate_qbss_load_status(tSirBssDescription *pBssDescr,
 		pBssDescr->QBSSLoad_present = true;
 		pBssDescr->QBSSLoad_avail = pBPR->QBSSLoad.avail;
 		pBssDescr->qbss_chan_load = pBPR->QBSSLoad.chautil;
+		pBssDescr->qbss_stacount = pBPR->QBSSLoad.stacount;
 	}
 }
 #else
@@ -98,6 +99,37 @@ static inline void populate_qbss_load_status(tSirBssDescription *pBssDescr,
 {
 }
 #endif
+
+/**
+ * lim_get_nss_supported_by_ap() - finds out nss from AP
+ * @bcn: beacon structure pointer
+ *
+ * Return: number of nss advertised by AP
+ */
+static uint8_t lim_get_nss_supported_by_ap(tpSirProbeRespBeacon bcn)
+{
+	if (bcn->VHTCaps.present) {
+		if ((bcn->VHTCaps.rxMCSMap & 0xC0) != 0xC0)
+			return 4;
+
+		if ((bcn->VHTCaps.rxMCSMap & 0x30) != 0x30)
+			return 3;
+
+		if ((bcn->VHTCaps.rxMCSMap & 0x0C) != 0x0C)
+			return 2;
+	} else if (bcn->HTCaps.present) {
+		if (bcn->HTCaps.supportedMCSSet[3])
+			return 4;
+
+		if (bcn->HTCaps.supportedMCSSet[2])
+			return 3;
+
+		if (bcn->HTCaps.supportedMCSSet[1])
+			return 2;
+	}
+
+	return 1;
+}
 
 /**
  * lim_collect_bss_description()
@@ -192,6 +224,34 @@ lim_collect_bss_description(tpAniSirGlobal pMac,
 	if (pBPR->VHTOperation.present)
 		if (pBPR->VHTOperation.chanWidth == 1)
 			pBssDescr->chan_width = eHT_CHANNEL_WIDTH_80MHZ;
+	/*
+	 * If the ESP metric is transmitting multiple airtime fractions, then
+	 * follow the sequence AC_BE, AC_VI, AC_VO, AC_BK and pick whichever is
+	 * the first one available
+	 */
+	if (pBPR->esp_information.is_present) {
+		if (pBPR->esp_information.esp_info_AC_BE.access_category
+				== ESP_AC_BE)
+			pBssDescr->air_time_fraction =
+				pBPR->esp_information.esp_info_AC_BE.
+				estimated_air_fraction;
+		else if (pBPR->esp_information.esp_info_AC_VI.access_category
+				== ESP_AC_VI)
+			pBssDescr->air_time_fraction =
+				pBPR->esp_information.esp_info_AC_VI.
+				estimated_air_fraction;
+		else if (pBPR->esp_information.esp_info_AC_VO.access_category
+				== ESP_AC_VO)
+			pBssDescr->air_time_fraction =
+				pBPR->esp_information.esp_info_AC_VO.
+				estimated_air_fraction;
+		else if (pBPR->esp_information.esp_info_AC_BK.access_category
+				== ESP_AC_BK)
+			pBssDescr->air_time_fraction =
+				pBPR->esp_information.esp_info_AC_BK.
+				estimated_air_fraction;
+	}
+	pBssDescr->nss = lim_get_nss_supported_by_ap(pBPR);
 
 	if (!pBssDescr->beaconInterval) {
 		pe_warn("Beacon Interval is ZERO, making it to default 100 "
@@ -358,7 +418,6 @@ lim_check_and_add_bss_description(tpAniSirGlobal mac_ctx,
 		rx_chan_bd = WMA_GET_RX_CH(rx_packet_info);
 
 		if (rx_chan_bd != rx_chan_in_beacon) {
-			/* Drop beacon, if CH do not match */
 			if (mac_ctx->allow_adj_ch_bcn) {
 				freq_diff = abs(cds_chan_to_freq(rx_chan_bd) -
 						cds_chan_to_freq(
@@ -368,7 +427,7 @@ lim_check_and_add_bss_description(tpAniSirGlobal mac_ctx,
 			}
 			/* Drop beacon, if CH do not match, Drop */
 			if (!fProbeRsp && drop_bcn_prb_rsp) {
-					pe_debug("Beacon Rsp dropped. Channel in BD %d. Channel in beacon %d",
+				pe_debug("Beacon Rsp dropped. Channel in BD: %d Channel in beacon: %d",
 					rx_chan_bd, rx_chan_in_beacon);
 				return;
 			}
@@ -376,7 +435,7 @@ lim_check_and_add_bss_description(tpAniSirGlobal mac_ctx,
 			else {
 				if (!mac_ctx->allow_adj_ch_bcn)
 					flags |= WLAN_SKIP_RSSI_UPDATE;
-					pe_debug("SSID %s, CH in ProbeRsp %d, CH in BD %d, mismatch, Do Not Drop",
+				pe_debug("SSID: %s CH in ProbeRsp: %d CH in BD: %d mismatch Do Not Drop",
 					bpr->ssId.ssId, rx_chan_in_beacon,
 					WMA_GET_RX_CH(rx_packet_info));
 				WMA_GET_RX_CH(rx_packet_info) =

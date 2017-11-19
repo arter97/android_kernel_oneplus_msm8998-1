@@ -175,6 +175,7 @@ enum log_event_indicator {
  * @WLAN_LOG_REASON_SCAN_NOT_ALLOWED: scan not allowed due to connection states
  * @WLAN_LOG_REASON_HB_FAILURE: station triggered heart beat failure with AP
  * @WLAN_LOG_REASON_ROAM_HO_FAILURE: Handover failed during LFR3 roaming
+ * @WLAN_LOG_REASON_DISCONNECT: Disconnect because of some failure
  */
 enum log_event_host_reason_code {
 	WLAN_LOG_REASON_CODE_UNUSED,
@@ -190,7 +191,8 @@ enum log_event_host_reason_code {
 	WLAN_LOG_REASON_NO_SCAN_RESULTS,
 	WLAN_LOG_REASON_SCAN_NOT_ALLOWED,
 	WLAN_LOG_REASON_HB_FAILURE,
-	WLAN_LOG_REASON_ROAM_HO_FAILURE
+	WLAN_LOG_REASON_ROAM_HO_FAILURE,
+	WLAN_LOG_REASON_DISCONNECT
 };
 
 
@@ -331,6 +333,11 @@ typedef struct sLimTimers {
 	 */
 	TX_TIMER gLimActiveToPassiveChannelTimer;
 	TX_TIMER g_lim_periodic_auth_retry_timer;
+	/*
+	 * This timer is used for delay between shared auth failure and
+	 * open auth start
+	 */
+	TX_TIMER open_sys_auth_timer;
 
 /* ********************TIMER SECTION ENDS************************************************** */
 /* ALL THE FIELDS BELOW THIS CAN BE ZEROED OUT in lim_initialize */
@@ -395,6 +402,8 @@ typedef struct sAniSirLim {
 	/* abort scan is used to abort an on-going scan */
 	uint8_t abortScan;
 	tLimScanChnInfo scanChnInfo;
+
+	struct lim_scan_channel_status scan_channel_status;
 
 	/* ////////////////////////////////////     SCAN/LEARN RELATED START /////////////////////////////////////////// */
 	tSirMacAddr gSelfMacAddr;       /* added for BT-AMP Support */
@@ -848,22 +857,9 @@ typedef struct sRrmContext {
 	tRrmPEContext rrmPEContext;
 } tRrmContext, *tpRrmContext;
 
-/**
- * enum tDriverType - Indicate the driver type to the mac, and based on this
- * do appropriate initialization.
- *
- * @eDRIVER_TYPE_PRODUCTION:
- * @eDRIVER_TYPE_MFG:
- *
- */
-typedef enum {
-	eDRIVER_TYPE_PRODUCTION = 0,
-	eDRIVER_TYPE_MFG = 1,
-} tDriverType;
-
 typedef struct sHalMacStartParameters {
 	/* parametes for the Firmware */
-	tDriverType driverType;
+	enum qdf_driver_type driverType;
 
 } tHalMacStartParameters;
 
@@ -908,7 +904,7 @@ struct vdev_type_nss {
 /* ------------------------------------------------------------------- */
 /* / MAC Sirius parameter structure */
 typedef struct sAniSirGlobal {
-	tDriverType gDriverType;
+	enum qdf_driver_type gDriverType;
 
 	tAniSirCfg cfg;
 	tAniSirLim lim;
@@ -945,6 +941,7 @@ typedef struct sAniSirGlobal {
 	uint8_t lteCoexAntShare;
 	uint8_t beacon_offload;
 	bool pmf_offload;
+	bool is_fils_roaming_supported;
 	uint32_t fEnableDebugLog;
 	uint16_t mgmtSeqNum;
 	bool enable5gEBT;
@@ -978,7 +975,9 @@ typedef struct sAniSirGlobal {
 	bool sta_prefer_80MHz_over_160MHz;
 	enum  country_src reg_hint_src;
 	uint32_t rx_packet_drop_counter;
-	struct candidate_chan_info candidate_channel_info[QDF_MAX_NUM_CHAN];
+	bool snr_monitor_enabled;
+	/* channel information callback */
+	void (*chan_info_cb)(struct scan_chan_info *chan_info);
 } tAniSirGlobal;
 
 typedef enum {

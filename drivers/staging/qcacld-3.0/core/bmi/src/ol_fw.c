@@ -493,7 +493,10 @@ int ol_copy_ramdump(struct hif_opaque_softc *scn)
 		BMI_ERR("%s qdf_dev is NULL", __func__);
 		return -EINVAL;
 	}
-
+	if (pld_is_fw_dump_skipped(qdf_dev->dev)) {
+		BMI_INFO("%s ssr enabled, skip ramdump", __func__);
+		return 0;
+	}
 	info = qdf_mem_malloc(sizeof(struct ramdump_info));
 	if (!info) {
 		BMI_ERR("%s Memory for Ramdump Allocation failed", __func__);
@@ -621,7 +624,7 @@ void ol_target_failure(void *instance, QDF_STATUS status)
 		return;
 	}
 
-	if (cds_is_driver_recovering()) {
+	if (cds_is_driver_recovering() || cds_is_driver_in_bad_state()) {
 		BMI_ERR("%s: Recovery in progress, ignore!\n", __func__);
 		return;
 	}
@@ -783,6 +786,8 @@ QDF_STATUS ol_configure_target(struct ol_context *ol_ctx)
 	if (hif_get_bus_type(scn) == QDF_BUS_TYPE_PCI) {
 		if (ol_disable_cdc_max_perf(ol_ctx))
 			return QDF_STATUS_E_FAILURE;
+
+		qdf_mem_zero(&cap, sizeof(cap));
 
 		ret = pld_get_platform_cap(qdf_dev->dev, &cap);
 		if (ret)
@@ -1332,16 +1337,16 @@ QDF_STATUS ol_download_firmware(struct ol_context *ol_ctx)
 	case QCA9379_REV1_VERSION:
 	case AR6320_REV4_VERSION:
 	case AR6320_DEV_VERSION:
-	/*
-	 * In sdio interface chip, both sdio_data2 and uart_tx pin
-	 * will use GPIO6. It is set by fw rom code, which will cause
-	 * sdio CRC error when there is sdio transaction.
-	 * Override uart tx pin to avoid side effect to sdio pin.
-	 */
-	if (hif_get_bus_type(scn) == QDF_BUS_TYPE_SDIO)
-		param = 19;
-	else
-		param = 6;
+		/*
+		 * In sdio interface chip, both sdio_data2 and uart_tx pin
+		 * will use GPIO6. It is set by fw rom code, which will cause
+		 * sdio CRC error when there is sdio transaction.
+		 * Override uart tx pin to avoid side effect to sdio pin.
+		 */
+		if (hif_get_bus_type(scn) == QDF_BUS_TYPE_SDIO)
+			param = 19;
+		else
+			param = 6;
 		break;
 	default:
 	/* Configure GPIO AR9888 UART */

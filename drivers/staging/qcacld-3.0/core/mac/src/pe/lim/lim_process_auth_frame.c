@@ -51,6 +51,7 @@
 #include "lim_ft.h"
 #include "cds_utils.h"
 #include "lim_process_fils.h"
+#include "lim_send_messages.h"
 
 /**
  * is_auth_valid
@@ -164,7 +165,7 @@ static void lim_process_auth_shared_system_algo(tpAniSirGlobal mac_ctx,
 		auth_node->timestamp = qdf_mc_timer_get_system_ticks();
 		lim_add_pre_auth_node(mac_ctx, auth_node);
 
-		pe_debug("Alloc new data: %p id: %d peer ",
+		pe_debug("Alloc new data: %pK id: %d peer ",
 			auth_node, auth_node->authNodeIdx);
 		lim_print_mac_addr(mac_ctx, mac_hdr->sa, LOGD);
 		/* / Create and activate Auth Response timer */
@@ -239,7 +240,7 @@ static void lim_process_auth_open_system_algo(tpAniSirGlobal mac_ctx,
 		lim_print_mac_addr(mac_ctx, mac_hdr->sa, LOGW);
 		return;
 	}
-	pe_debug("Alloc new data: %p peer", auth_node);
+	pe_debug("Alloc new data: %pK peer", auth_node);
 	lim_print_mac_addr(mac_ctx, mac_hdr->sa, LOGD);
 	qdf_mem_copy((uint8_t *) auth_node->peerMacAddr,
 			mac_hdr->sa, sizeof(tSirMacAddr));
@@ -282,7 +283,7 @@ static void lim_process_auth_frame_type1(tpAniSirGlobal mac_ctx,
 	if (sta_ds_ptr) {
 		tLimMlmDisassocReq *pMlmDisassocReq = NULL;
 		tLimMlmDeauthReq *pMlmDeauthReq = NULL;
-		tAniBool isConnected = eSIR_TRUE;
+		bool isConnected = true;
 
 		pMlmDisassocReq =
 			mac_ctx->lim.limDisassocDeauthCnfReq.pMlmDisassocReq;
@@ -295,7 +296,7 @@ static void lim_process_auth_frame_type1(tpAniSirGlobal mac_ctx,
 				MAC_ADDR_ARRAY(
 					pMlmDisassocReq->peer_macaddr.bytes));
 			lim_process_disassoc_ack_timeout(mac_ctx);
-			isConnected = eSIR_FALSE;
+			isConnected = false;
 		}
 		pMlmDeauthReq =
 			mac_ctx->lim.limDisassocDeauthCnfReq.pMlmDeauthReq;
@@ -308,7 +309,7 @@ static void lim_process_auth_frame_type1(tpAniSirGlobal mac_ctx,
 				MAC_ADDR_ARRAY(
 					pMlmDeauthReq->peer_macaddr.bytes));
 			lim_process_deauth_ack_timeout(mac_ctx);
-			isConnected = eSIR_FALSE;
+			isConnected = false;
 		}
 
 		/*
@@ -633,7 +634,7 @@ static void lim_process_auth_frame_type2(tpAniSirGlobal mac_ctx,
 			return;
 		}
 
-		pe_debug("Alloc new data: %p peer", auth_node);
+		pe_debug("Alloc new data: %pK peer", auth_node);
 		lim_print_mac_addr(mac_ctx, mac_hdr->sa, LOGD);
 		qdf_mem_copy((uint8_t *) auth_node->peerMacAddr,
 				mac_ctx->lim.gpLimMlmAuthReq->peerMacAddr,
@@ -750,7 +751,6 @@ static void lim_process_auth_frame_type2(tpAniSirGlobal mac_ctx,
 				mac_hdr->sa, rx_auth_frm_body->length,
 				pe_session);
 		qdf_mem_free(encr_auth_frame);
-
 		return;
 	}
 }
@@ -990,7 +990,7 @@ static void lim_process_auth_frame_type4(tpAniSirGlobal mac_ctx,
 			lim_print_mac_addr(mac_ctx, mac_hdr->sa, LOGW);
 			return;
 		}
-		pe_debug("Alloc new data: %p peer", auth_node);
+		pe_debug("Alloc new data: %pK peer", auth_node);
 		lim_print_mac_addr(mac_ctx, mac_hdr->sa, LOGD);
 		qdf_mem_copy((uint8_t *) auth_node->peerMacAddr,
 				mac_ctx->lim.gpLimMlmAuthReq->peerMacAddr,
@@ -1014,6 +1014,43 @@ static void lim_process_auth_frame_type4(tpAniSirGlobal mac_ctx,
 				rx_auth_frm_body->authStatusCode,
 				pe_session);
 	}
+}
+
+void lim_send_open_system_auth(void *ctx, uint32_t param)
+{
+	tLimMlmAuthReq *auth_req;
+	tpPESession session_entry;
+	tpAniSirGlobal mac_ctx = (tpAniSirGlobal)ctx;
+	uint8_t session_id;
+
+	session_id = mac_ctx->lim.limTimers.open_sys_auth_timer.sessionId;
+	session_entry = pe_find_session_by_session_id(mac_ctx, session_id);
+
+	if (!session_entry)
+		return;
+	/* Trigger MAC based Authentication */
+	auth_req = qdf_mem_malloc(sizeof(tLimMlmAuthReq));
+	if (!auth_req) {
+		pe_err("mlmAuthReq :Memory alloc failed");
+		lim_handle_sme_join_result(mac_ctx,
+					eSIR_SME_AUTH_TIMEOUT_RESULT_CODE,
+					eSIR_MAC_AUTH_ALGO_NOT_SUPPORTED_STATUS,
+					session_entry);
+		tx_timer_deactivate(&mac_ctx->lim.limTimers.
+				    open_sys_auth_timer);
+		return;
+	}
+	sir_copy_mac_addr(auth_req->peerMacAddr, session_entry->bssId);
+	auth_req->authType = eSIR_OPEN_SYSTEM;
+	/* Update PE session Id */
+	auth_req->sessionId = session_id;
+	if (wlan_cfg_get_int(mac_ctx, WNI_CFG_AUTHENTICATE_FAILURE_TIMEOUT,
+	    (uint32_t *) &auth_req->authFailureTimeout) != eSIR_SUCCESS) {
+		pe_err("Fail:retrieve AuthFailureTimeout");
+	}
+	lim_post_mlm_message(mac_ctx, LIM_MLM_AUTH_REQ, (uint32_t *) auth_req);
+	tx_timer_deactivate(&mac_ctx->lim.limTimers.open_sys_auth_timer);
+
 }
 
 /**
@@ -1086,7 +1123,7 @@ lim_process_auth_frame(tpAniSirGlobal mac_ctx, uint8_t *rx_pkt_info,
 	curr_seq_num = (mac_hdr->seqControl.seqNumHi << 4) |
 		(mac_hdr->seqControl.seqNumLo);
 
-	pe_info("Sessionid: %d System role: %d limMlmState: %d: Auth response Received BSSID: "MAC_ADDRESS_STR" RSSI: %d",
+	pe_debug("Sessionid: %d System role: %d limMlmState: %d: Auth response Received BSSID: "MAC_ADDRESS_STR" RSSI: %d",
 		pe_session->peSessionId, GET_LIM_SYSTEM_ROLE(pe_session),
 		pe_session->limMlmState, MAC_ADDR_ARRAY(mac_hdr->bssId),
 		(uint) abs((int8_t) WMA_GET_RX_RSSI_NORMALIZED(rx_pkt_info)));
@@ -1166,7 +1203,6 @@ lim_process_auth_frame(tpAniSirGlobal mac_ctx, uint8_t *rx_pkt_info,
 
 		if ((frame_len < LIM_ENCR_AUTH_BODY_LEN_SAP) ||
 		    (frame_len > LIM_ENCR_AUTH_BODY_LEN)) {
-
 			/* Log error */
 			pe_err("Not enough size: %d to decry rx Auth frm",
 				frame_len);
@@ -1427,7 +1463,7 @@ tSirRetStatus lim_process_auth_frame_no_session(tpAniSirGlobal pMac, uint8_t *pB
 	pBody = WMA_GET_RX_MPDU_DATA(pBd);
 	frameLen = WMA_GET_RX_PAYLOAD_LEN(pBd);
 
-	pe_info("Auth Frame Received: BSSID " MAC_ADDRESS_STR " (RSSI %d)",
+	pe_debug("Auth Frame Received: BSSID " MAC_ADDRESS_STR " (RSSI %d)",
 		MAC_ADDR_ARRAY(pHdr->bssId),
 		(uint) abs((int8_t) WMA_GET_RX_RSSI_NORMALIZED(pBd)));
 
@@ -1447,7 +1483,7 @@ tSirRetStatus lim_process_auth_frame_no_session(tpAniSirGlobal pMac, uint8_t *pB
 	}
 
 	if (psessionEntry == NULL) {
-		pe_err("Error: Unable to find session id while in pre-auth phase for FT");
+		pe_debug("cannot find session id in FT pre-auth phase");
 		return eSIR_FAILURE;
 	}
 
@@ -1500,12 +1536,12 @@ tSirRetStatus lim_process_auth_frame_no_session(tpAniSirGlobal pMac, uint8_t *pB
 		 * pre-auth.
 		 */
 		pe_debug("Auth rsp already posted to SME"
-			       " (session %p, FT session %p)", psessionEntry,
+			       " (session %pK, FT session %pK)", psessionEntry,
 			       psessionEntry);
 		return eSIR_SUCCESS;
 	} else {
 		pe_warn("Auth rsp not yet posted to SME"
-			       " (session %p, FT session %p)", psessionEntry,
+			       " (session %pK, FT session %pK)", psessionEntry,
 			       psessionEntry);
 		psessionEntry->ftPEContext.pFTPreAuthReq->bPreAuthRspProcessed =
 			true;

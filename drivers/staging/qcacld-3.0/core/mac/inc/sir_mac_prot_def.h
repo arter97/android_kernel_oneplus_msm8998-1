@@ -161,12 +161,10 @@
 #define SIR_MAC_QOS_DEF_BA_REQ      4
 #define SIR_MAC_QOS_DEF_BA_RSP      5
 
-#ifdef ANI_SUPPORT_11H
 #define SIR_MAC_ACTION_MEASURE_REQUEST_ID      0
 #define SIR_MAC_ACTION_MEASURE_REPORT_ID       1
 #define SIR_MAC_ACTION_TPC_REQUEST_ID          2
 #define SIR_MAC_ACTION_TPC_REPORT_ID           3
-#endif /* ANI_SUPPORT_11H */
 #define SIR_MAC_ACTION_CHANNEL_SWITCH_ID       4
 
 #ifdef ANI_SUPPORT_11H
@@ -568,6 +566,7 @@
 
 /* / MAX key length when ULA is used */
 #define SIR_MAC_MAX_KEY_LENGTH               32
+#define SIR_MAC_MAX_KEY_RSC_LEN              16
 
 /* / Macro definitions for get/set on FC fields */
 #define SIR_MAC_GET_PROT_VERSION(x)      ((((uint16_t) x) & 0x0300) >> 8)
@@ -620,6 +619,20 @@
 
 #define SIR_MAC_VENDOR_AP_1_OUI             "\x00\x0C\x43"
 #define SIR_MAC_VENDOR_AP_1_OUI_LEN         3
+
+#define SIR_MAC_VENDOR_AP_2_OUI             "\x00\x10\x18"
+#define SIR_MAC_VENDOR_AP_2_OUI_LEN         3
+
+#define SIR_MAC_VENDOR_AP_2_DATA            "\x02\xFF\xF0\x2C\x00\x00"
+#define SIR_MAC_VENDOR_AP_2_DATA_2          "\x02\xFF\x04\x0C\x00\x00"
+#define SIR_MAC_VENDOR_AP_2_DATA_LEN        6
+
+#define SIR_MAC_VENDOR_AP_3_OUI             "\x00\x03\x7F"
+#define SIR_MAC_VENDOR_AP_3_OUI_LEN         3
+
+#define SIR_MAC_VENDOR_AP_4_OUI             "\x8C\xFD\xF0"
+#define SIR_MAC_VENDOR_AP_4_OUI_LEN         3
+
 /* / Status Code (present in Management response frames) enum */
 
 typedef enum eSirMacStatusCodes {
@@ -669,7 +682,11 @@ typedef enum eSirMacStatusCodes {
 	eSIR_MAC_QOS_UNSPECIFIED_FAILURE_STATUS = 32,   /* Unspecified, QoS-related failure */
 	eSIR_MAC_QAP_NO_BANDWIDTH_STATUS = 33,  /* Association denied because QoS AP has insufficient bandwidth to handle another */
 	/* QoS STA */
-	eSIR_MAC_XS_FRAME_LOSS_STATUS = 34,     /* Association denied due to excessive frame loss rates and/or poor conditions on cur- */
+	/*
+	 * Association denied due to excessive frame loss rates
+	 * and/or poor conditions/RSSI on cur channel
+	 */
+	eSIR_MAC_XS_FRAME_LOSS_POOR_CHANNEL_RSSI_STATUS = 34,
 	/* rent operating channel */
 	eSIR_MAC_STA_QOS_NOT_SUPPORTED_STATUS = 35,     /* Association (with QoS BSS) denied because the requesting STA does not support the */
 	/* QoS facility */
@@ -997,11 +1014,11 @@ typedef struct sSirMacWpaInfo {
 	uint8_t info[SIR_MAC_MAX_IE_LENGTH];
 } qdf_packed tSirMacWpaInfo, *tpSirMacWpaInfo,
 tSirMacRsnInfo, *tpSirMacRsnInfo;
+
 typedef struct sSirMacWapiInfo {
 	uint8_t length;
 	uint8_t info[SIR_MAC_MAX_IE_LENGTH];
-} qdf_packed tSirMacWapiInfo, *tpSirMacWapiInfo,
-tSirMacWapiInfo, *tpSirMacWapiInfo;
+} qdf_packed tSirMacWapiInfo, *tpSirMacWapiInfo;
 
 typedef struct sSirMacFHParamSet {
 	uint16_t dwellTime;

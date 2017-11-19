@@ -173,7 +173,7 @@ static void wma_send_bcn_buf_ll(tp_wma_handle wma,
 			(uint8_t) WMI_UNIFIED_NOA_ATTR_CTWIN_GET(p2p_noa_info);
 		noa_ie.num_descriptors = (uint8_t)
 				WMI_UNIFIED_NOA_ATTR_NUM_DESC_GET(p2p_noa_info);
-		WMA_LOGI("%s: index %u, oppPs %u, ctwindow %u, num_descriptors = %u",
+		WMA_LOGD("%s: index %u, oppPs %u, ctwindow %u, num_descriptors = %u",
 			 __func__, noa_ie.index,
 			 noa_ie.oppPS, noa_ie.ctwindow, noa_ie.num_descriptors);
 		for (i = 0; i < noa_ie.num_descriptors; i++) {
@@ -186,7 +186,7 @@ static void wma_send_bcn_buf_ll(tp_wma_handle wma,
 				p2p_noa_info->noa_descriptors[i].interval;
 			noa_ie.noa_descriptors[i].start_time =
 				p2p_noa_info->noa_descriptors[i].start_time;
-			WMA_LOGI("%s: NoA descriptor[%d] type_count %u, duration %u, interval %u, start_time = %u",
+			WMA_LOGD("%s: NoA descriptor[%d] type_count %u, duration %u, interval %u, start_time = %u",
 				 __func__, i,
 				 noa_ie.noa_descriptors[i].type_count,
 				 noa_ie.noa_descriptors[i].duration,
@@ -509,6 +509,12 @@ int wma_unified_bcntx_status_event_handler(void *handle,
 
 	WMA_LOGD("%s", __func__);
 
+	if (resp_event->vdev_id >= wma->max_bssid) {
+		WMA_LOGE("%s: received invalid vdev_id %d",
+			 __func__, resp_event->vdev_id);
+		return -EINVAL;
+	}
+
 	/* Check for valid handle to ensure session is not
 	 * deleted in any race
 	 */
@@ -584,6 +590,49 @@ static inline void wma_get_link_probe_timeout(struct sAniSirGlobal *mac,
 }
 
 /**
+ * wma_verify_rate_code() - verify if rate code is valid.
+ * @rate_code:     rate code
+ *
+ * Return: verify result
+ */
+static bool wma_verify_rate_code(u_int32_t rate_code)
+{
+	uint8_t preamble, nss, rate;
+	bool valid = true;
+
+	preamble = (rate_code & 0xc0) >> 6;
+	nss = (rate_code & 0x30) >> 4;
+	rate = rate_code & 0xf;
+
+	switch (preamble) {
+	case WMI_RATE_PREAMBLE_CCK:
+		if (nss != 0 || rate > 3)
+			valid = false;
+		break;
+	case WMI_RATE_PREAMBLE_OFDM:
+		if (nss != 0 || rate > 7)
+			valid = false;
+		break;
+	case WMI_RATE_PREAMBLE_HT:
+		if (nss > 1 || rate > 7)
+			valid = false;
+		break;
+	case WMI_RATE_PREAMBLE_VHT:
+		if (nss > 1 || rate > 9)
+			valid = false;
+		break;
+	default:
+		break;
+	}
+	return valid;
+}
+
+#define TX_MGMT_RATE_2G_ENABLE_OFFSET 30
+#define TX_MGMT_RATE_5G_ENABLE_OFFSET 31
+#define TX_MGMT_RATE_2G_OFFSET 0
+#define TX_MGMT_RATE_5G_OFFSET 12
+
+/**
  * wma_set_mgmt_rate() - set vdev mgmt rate.
  * @wma:     wma handle
  * @vdev_id: vdev id
@@ -594,6 +643,7 @@ void wma_set_vdev_mgmt_rate(tp_wma_handle wma, uint8_t vdev_id)
 {
 	uint32_t cfg_val;
 	int ret;
+	uint32_t per_band_mgmt_tx_rate = 0;
 	struct sAniSirGlobal *mac = cds_get_context(QDF_MODULE_ID_PE);
 
 	if (NULL == mac) {
@@ -603,7 +653,8 @@ void wma_set_vdev_mgmt_rate(tp_wma_handle wma, uint8_t vdev_id)
 
 	if (wlan_cfg_get_int(mac, WNI_CFG_RATE_FOR_TX_MGMT,
 			     &cfg_val) == eSIR_SUCCESS) {
-		if (cfg_val == WNI_CFG_RATE_FOR_TX_MGMT_STADEF) {
+		if ((cfg_val == WNI_CFG_RATE_FOR_TX_MGMT_STADEF) ||
+		    !wma_verify_rate_code(cfg_val)) {
 			WMA_LOGD("default WNI_CFG_RATE_FOR_TX_MGMT, ignore");
 		} else {
 			ret = wma_vdev_set_param(
@@ -619,6 +670,46 @@ void wma_set_vdev_mgmt_rate(tp_wma_handle wma, uint8_t vdev_id)
 	} else {
 		WMA_LOGE("Failed to get value of WNI_CFG_RATE_FOR_TX_MGMT");
 	}
+
+	if (wlan_cfg_get_int(mac, WNI_CFG_RATE_FOR_TX_MGMT_2G,
+			     &cfg_val) == eSIR_SUCCESS) {
+		if ((cfg_val == WNI_CFG_RATE_FOR_TX_MGMT_2G_STADEF) ||
+		    !wma_verify_rate_code(cfg_val)) {
+			per_band_mgmt_tx_rate &=
+			    ~(1 << TX_MGMT_RATE_2G_ENABLE_OFFSET);
+		} else {
+			per_band_mgmt_tx_rate |=
+			    (1 << TX_MGMT_RATE_2G_ENABLE_OFFSET);
+			per_band_mgmt_tx_rate |=
+			    ((cfg_val & 0x7FF) << TX_MGMT_RATE_2G_OFFSET);
+		}
+	} else {
+		WMA_LOGE("Failed to get value of WNI_CFG_RATE_FOR_TX_MGMT_2G");
+	}
+
+	if (wlan_cfg_get_int(mac, WNI_CFG_RATE_FOR_TX_MGMT_5G,
+			     &cfg_val) == eSIR_SUCCESS) {
+		if ((cfg_val == WNI_CFG_RATE_FOR_TX_MGMT_5G_STADEF) ||
+		    !wma_verify_rate_code(cfg_val)) {
+			per_band_mgmt_tx_rate &=
+			    ~(1 << TX_MGMT_RATE_5G_ENABLE_OFFSET);
+		} else {
+			per_band_mgmt_tx_rate |=
+			    (1 << TX_MGMT_RATE_5G_ENABLE_OFFSET);
+			per_band_mgmt_tx_rate |=
+			    ((cfg_val & 0x7FF) << TX_MGMT_RATE_5G_OFFSET);
+		}
+	} else {
+		WMA_LOGE("Failed to get value of WNI_CFG_RATE_FOR_TX_MGMT_5G");
+	}
+
+	ret = wma_vdev_set_param(
+		wma->wmi_handle,
+		vdev_id,
+		WMI_VDEV_PARAM_PER_BAND_MGMT_TX_RATE,
+		per_band_mgmt_tx_rate);
+	if (ret)
+		WMA_LOGE("Failed to set WMI_VDEV_PARAM_PER_BAND_MGMT_TX_RATE");
 }
 
 /**
@@ -1320,7 +1411,7 @@ wma_update_beacon_interval(tp_wma_handle wma, uint8_t vdev_id,
 	if (QDF_IS_STATUS_ERROR(ret))
 		WMA_LOGE("Failed to update beacon interval");
 	else
-		WMA_LOGI("Updated beacon interval %d for vdev %d",
+		WMA_LOGD("Updated beacon interval %d for vdev %d",
 			 beaconInterval, vdev_id);
 }
 
@@ -1490,7 +1581,8 @@ static QDF_STATUS wma_setup_install_key_cmd(tp_wma_handle wma_handle,
 #endif
 	params.key_txmic_len = 0;
 	params.key_rxmic_len = 0;
-
+	qdf_mem_copy(&params.key_rsc_counter,
+		     &key_params->key_rsc[0], sizeof(uint64_t));
 	params.key_flags = 0;
 	if (key_params->unicast)
 		params.key_flags |= PAIRWISE_USAGE;
@@ -1563,6 +1655,11 @@ static QDF_STATUS wma_setup_install_key_cmd(tp_wma_handle wma_handle,
 		params.key_cipher = WMI_CIPHER_AES_CMAC;
 		break;
 #endif /* WLAN_FEATURE_11W */
+	/* Firmware uses length to detect GCMP 128/256*/
+	case eSIR_ED_GCMP:
+	case eSIR_ED_GCMP_256:
+		params.key_cipher = WMI_CIPHER_AES_GCM;
+		break;
 	default:
 		/* TODO: MFP ? */
 		WMA_LOGE("%s:Invalid encryption type:%d", __func__,
@@ -1620,6 +1717,9 @@ static QDF_STATUS wma_setup_install_key_cmd(tp_wma_handle wma_handle,
 	WMA_LOGD("unicast %d peer_mac %pM def_key_idx %d",
 		 key_params->unicast, key_params->peer_mac,
 		 key_params->def_key_idx);
+	WMA_LOGD("keyrsc param key_seq_counter_h:0x%x key_seq_counter_l: 0x%x",
+		params.key_rsc_counter.key_seq_counter_h,
+		params.key_rsc_counter.key_seq_counter_l);
 
 	status = wmi_unified_setup_install_key_cmd(wma_handle->wmi_handle,
 								&params);
@@ -1695,6 +1795,11 @@ void wma_set_bsskey(tp_wma_handle wma_handle, tpSetBssKeyParams key_info)
 	     key_info->encType == eSIR_ED_WEP104)) {
 		wma_read_cfg_wepkey(wma_handle, key_info->key,
 				    &def_key_idx, &key_info->numKeys);
+	} else if ((key_info->encType == eSIR_ED_WEP40) ||
+		   (key_info->encType == eSIR_ED_WEP104)) {
+		struct wma_txrx_node *intf =
+			&wma_handle->interfaces[key_info->smesessionId];
+		key_params.def_key_idx = intf->wep_default_key_idx;
 	}
 
 	for (i = 0; i < key_info->numKeys; i++) {
@@ -1708,6 +1813,9 @@ void wma_set_bsskey(tp_wma_handle wma_handle, tpSetBssKeyParams key_info)
 			key_params.key_idx = key_info->key[i].keyId;
 
 		key_params.key_len = key_info->key[i].keyLength;
+		qdf_mem_copy(key_params.key_rsc,
+				key_info->key[i].keyRsc,
+				SIR_MAC_MAX_KEY_RSC_LEN);
 		if (key_info->encType == eSIR_ED_TKIP) {
 			qdf_mem_copy(key_params.key_data,
 				     key_info->key[i].key, 16);
@@ -1743,7 +1851,8 @@ void wma_set_bsskey(tp_wma_handle wma_handle, tpSetBssKeyParams key_info)
 	key_info->status = QDF_STATUS_SUCCESS;
 
 out:
-	wma_send_msg(wma_handle, WMA_SET_BSSKEY_RSP, (void *)key_info, 0);
+	wma_send_msg_high_priority(wma_handle,
+			WMA_SET_BSSKEY_RSP, (void *)key_info, 0);
 }
 
 #ifdef QCA_IBSS_SUPPORT
@@ -2061,8 +2170,8 @@ void wma_set_stakey(tp_wma_handle wma_handle, tpSetStaKeyParams key_info)
 	key_info->status = QDF_STATUS_SUCCESS;
 out:
 	if (key_info->sendRsp)
-		wma_send_msg(wma_handle, WMA_SET_STAKEY_RSP, (void *)key_info,
-			     0);
+		wma_send_msg_high_priority(wma_handle, WMA_SET_STAKEY_RSP,
+			(void *)key_info, 0);
 }
 
 /**
@@ -2497,7 +2606,7 @@ void wma_send_beacon(tp_wma_handle wma, tpSendbeaconParams bcn_info)
 
 		if (bcn_info->p2pIeOffset) {
 			p2p_ie = bcn_info->beacon + bcn_info->p2pIeOffset;
-			WMA_LOGI("%s: p2pIe is present - vdev_id %hu, p2p_ie = %p, p2p ie len = %hu",
+			WMA_LOGD("%s: p2pIe is present - vdev_id %hu, p2p_ie = %pK, p2p ie len = %hu",
 				__func__, vdev_id, p2p_ie, p2p_ie[1]);
 			if (wma_p2p_go_set_beacon_ie(wma, vdev_id,
 							 p2p_ie) < 0) {
@@ -3278,7 +3387,7 @@ static bool wma_is_pkt_drop_candidate(tp_wma_handle wma_handle,
 	peer = ol_txrx_find_peer_by_addr_inc_ref(pdev_ctx, peer_addr, &peer_id);
 	if (!peer) {
 		if (SIR_MAC_MGMT_ASSOC_REQ != subtype) {
-			WMA_LOGI(
+			WMA_LOGD(
 			   FL("Received mgmt frame: %0x from unknow peer: %pM"),
 			   subtype, peer_addr);
 			should_drop = true;
@@ -3291,7 +3400,7 @@ static bool wma_is_pkt_drop_candidate(tp_wma_handle wma_handle,
 		if (peer->last_assoc_rcvd) {
 			if (qdf_get_system_timestamp() - peer->last_assoc_rcvd <
 					WMA_MGMT_FRAME_DETECT_DOS_TIMER) {
-				WMA_LOGI(FL("Dropping Assoc Req received"));
+				WMA_LOGD(FL("Dropping Assoc Req received"));
 				should_drop = true;
 			}
 		}
@@ -3397,6 +3506,11 @@ static int wma_mgmt_rx_process(void *handle, uint8_t *data,
 			WMA_LOGD(FL("Recovery in progress"));
 			limit_prints_recovery = 0;
 		}
+		return -EINVAL;
+	}
+
+	if (cds_is_driver_in_bad_state()) {
+		WMA_LOGW(FL("Driver in bad state"));
 		return -EINVAL;
 	}
 
@@ -3510,6 +3624,11 @@ static int wma_mgmt_rx_process(void *handle, uint8_t *data,
 	mgt_type = (wh)->i_fc[0] & IEEE80211_FC0_TYPE_MASK;
 	mgt_subtype = (wh)->i_fc[0] & IEEE80211_FC0_SUBTYPE_MASK;
 
+	if (wma_read_d0wow_flag(wma_handle)) {
+		WMA_LOGE("%s: Frame subtype is 0x%x", __func__, mgt_subtype);
+		wma_set_d0wow_flag(wma_handle, false);
+	}
+
 	if (mgt_type == IEEE80211_FC0_TYPE_MGT &&
 	    (mgt_subtype == IEEE80211_FC0_SUBTYPE_DISASSOC ||
 	     mgt_subtype == IEEE80211_FC0_SUBTYPE_DEAUTH ||
@@ -3546,6 +3665,7 @@ static int wma_mgmt_rx_process(void *handle, uint8_t *data,
 			return -EINVAL;
 		}
 	}
+
 	if (wma_is_pkt_drop_candidate(wma_handle, wh->i_addr2, wh->i_addr3,
 					mgt_subtype)) {
 		cds_pkt_return_packet(rx_pkt);

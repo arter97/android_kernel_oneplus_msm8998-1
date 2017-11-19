@@ -429,7 +429,7 @@ void hif_display_ce_stats(struct HIF_CE_state *hif_ce_state)
 	char str_buffer[STR_SIZE];
 	int size, ret;
 
-	qdf_print("CE interrupt statistics:");
+	qdf_debug("CE interrupt statistics:");
 	for (i = 0; i < CE_COUNT_MAX; i++) {
 		size = STR_SIZE;
 		pos = 0;
@@ -441,7 +441,7 @@ void hif_display_ce_stats(struct HIF_CE_state *hif_ce_state)
 			size -= ret;
 			pos += ret;
 		}
-		qdf_print("CE id[%2d] - %s", i, str_buffer);
+		qdf_debug("CE id[%2d] - %s", i, str_buffer);
 	}
 #undef STR_SIZE
 }
@@ -482,6 +482,10 @@ irqreturn_t ce_dispatch_interrupt(int ce_id,
 		return IRQ_NONE;
 	}
 	hif_irq_disable(scn, ce_id);
+
+	if (!TARGET_REGISTER_ACCESS_ALLOW(scn))
+		return IRQ_HANDLED;
+
 	hif_record_ce_desc_event(scn, ce_id, HIF_IRQ_EVENT, NULL, NULL, 0);
 	hif_ce_increment_interrupt_count(hif_ce_state, ce_id);
 
@@ -490,6 +494,9 @@ irqreturn_t ce_dispatch_interrupt(int ce_id,
 		hif_irq_enable(scn, ce_id);
 		return IRQ_HANDLED;
 	}
+
+	if (qdf_tasklet_is_scheduled(&tasklet_entry->intr_tq))
+		return IRQ_HANDLED;
 
 	qdf_atomic_inc(&scn->active_tasklet_cnt);
 

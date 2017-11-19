@@ -473,8 +473,7 @@ void lim_pmf_comeback_timer_callback(void *context)
  */
 void lim_process_mlm_auth_cnf(tpAniSirGlobal mac_ctx, uint32_t *msg)
 {
-	tAniAuthType auth_type, auth_mode;
-	tLimMlmAuthReq *auth_req;
+	tAniAuthType auth_type;
 	tLimMlmAuthCnf *auth_cnf;
 	tpPESession session_entry;
 
@@ -544,34 +543,18 @@ void lim_process_mlm_auth_cnf(tpAniSirGlobal mac_ctx, uint32_t *msg)
 		 * When shared authentication fails with reason
 		 * code "13" and authType set to 'auto switch',
 		 * Try with open Authentication
+		 * There is a possibility that AP does not receive
+		 * ack and retries auth frame. The retry frame could be
+		 * received at host after open sys auth is sent to firmware
+		 * resulting in auth failure. So, to fix this issue, open system
+		 * auth frame is sent to firmware after timer of 15msec expires.
 		 */
-		auth_mode = eSIR_OPEN_SYSTEM;
-		/* Trigger MAC based Authentication */
-		auth_req = qdf_mem_malloc(sizeof(tLimMlmAuthReq));
-		if (NULL == auth_req) {
-			pe_err("mlmAuthReq :Memory alloc failed");
-			return;
+		mac_ctx->lim.limTimers.open_sys_auth_timer.sessionId =
+							    auth_cnf->sessionId;
+		if (tx_timer_activate(&mac_ctx->lim.limTimers.
+				      open_sys_auth_timer) != TX_SUCCESS) {
+			pe_err("failed to activate system Auth timer");
 		}
-		if (session_entry->limSmeState ==
-			eLIM_SME_WT_AUTH_STATE) {
-			sir_copy_mac_addr(auth_req->peerMacAddr,
-				session_entry->bssId);
-		} else {
-			qdf_mem_copy((uint8_t *)&auth_req->peerMacAddr,
-			(uint8_t *)&mac_ctx->lim.gLimPreAuthPeerAddr,
-			sizeof(tSirMacAddr));
-		}
-		auth_req->authType = auth_mode;
-		/* Update PE session Id */
-		auth_req->sessionId = auth_cnf->sessionId;
-		if (wlan_cfg_get_int(mac_ctx,
-			WNI_CFG_AUTHENTICATE_FAILURE_TIMEOUT,
-			(uint32_t *) &auth_req->authFailureTimeout)
-			!= eSIR_SUCCESS) {
-			pe_err("Fail:retrieve AuthFailureTimeout");
-		}
-		lim_post_mlm_message(mac_ctx, LIM_MLM_AUTH_REQ,
-			(uint32_t *) auth_req);
 		return;
 	} else {
 		/* MAC based authentication failure */
@@ -755,7 +738,7 @@ lim_fill_assoc_ind_params(tpAniSirGlobal mac_ctx,
 
 	/* Copy the new TITAN capabilities */
 	sme_assoc_ind->spectrumMgtIndicator = assoc_ind->spectrumMgtIndicator;
-	if (assoc_ind->spectrumMgtIndicator == eSIR_TRUE) {
+	if (assoc_ind->spectrumMgtIndicator == true) {
 		sme_assoc_ind->powerCap.minTxPower =
 			assoc_ind->powerCap.minTxPower;
 		sme_assoc_ind->powerCap.maxTxPower =
@@ -772,6 +755,17 @@ lim_fill_assoc_ind_params(tpAniSirGlobal mac_ctx,
 	/* Fill in WmmInfo */
 	sme_assoc_ind->wmmEnabledSta = assoc_ind->WmmStaInfoPresent;
 	sme_assoc_ind->ecsa_capable = assoc_ind->ecsa_capable;
+	sme_assoc_ind->ampdu = assoc_ind->ampdu;
+	sme_assoc_ind->sgi_enable = assoc_ind->sgi_enable;
+	sme_assoc_ind->tx_stbc = assoc_ind->tx_stbc;
+	sme_assoc_ind->rx_stbc = assoc_ind->rx_stbc;
+	sme_assoc_ind->ch_width = assoc_ind->ch_width;
+	sme_assoc_ind->mode = assoc_ind->mode;
+	sme_assoc_ind->max_supp_idx = assoc_ind->max_supp_idx;
+	sme_assoc_ind->max_ext_idx = assoc_ind->max_ext_idx;
+	sme_assoc_ind->max_mcs_idx = assoc_ind->max_mcs_idx;
+	sme_assoc_ind->rx_mcs_map = assoc_ind->rx_mcs_map;
+	sme_assoc_ind->tx_mcs_map = assoc_ind->tx_mcs_map;
 }
 
 /**
@@ -3255,7 +3249,7 @@ void lim_process_rx_scan_event(tpAniSirGlobal pMac, void *buf)
 	case SIR_SCAN_EVENT_START_FAILED:
 		if (ROC_SCAN_REQUESTOR_ID == pScanEvent->requestor) {
 			lim_send_sme_roc_rsp(pMac, eWNI_SME_REMAIN_ON_CHN_RSP,
-					 QDF_STATUS_SUCCESS,
+					 eSIR_SME_SUCCESS,
 					 pScanEvent->sessionId,
 					 pScanEvent->scanId);
 			qdf_mem_free(pMac->lim.gpLimRemainOnChanReq);
@@ -3283,7 +3277,7 @@ void lim_process_rx_scan_event(tpAniSirGlobal pMac, void *buf)
 			if (pMac->lim.gpLimRemainOnChanReq) {
 				lim_send_sme_roc_rsp(pMac,
 						 eWNI_SME_REMAIN_ON_CHN_RDY_IND,
-						 QDF_STATUS_SUCCESS,
+						 eSIR_SME_SUCCESS,
 						 pScanEvent->sessionId,
 						 pScanEvent->scanId);
 			} else {
@@ -3304,4 +3298,27 @@ void lim_process_rx_scan_event(tpAniSirGlobal pMac, void *buf)
 			  pScanEvent->event);
 	}
 	qdf_mem_free(buf);
+}
+
+void lim_process_rx_channel_status_event(tpAniSirGlobal mac_ctx, void *buf)
+{
+	struct lim_channel_status *chan_status = buf;
+
+	if (NULL == chan_status) {
+		QDF_TRACE(QDF_MODULE_ID_PE,
+			  QDF_TRACE_LEVEL_ERROR,
+			  "%s: ACS evt report buf NULL", __func__);
+		return;
+	}
+
+	if (ACS_FW_REPORT_PARAM_CONFIGURED)
+		lim_add_channel_status_info(mac_ctx, chan_status,
+					    chan_status->channel_id);
+	else
+		QDF_TRACE(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
+			  "%s: Error evt report", __func__);
+
+	qdf_mem_free(buf);
+
+	return;
 }

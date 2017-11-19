@@ -129,12 +129,10 @@ void wlan_hdd_cfg80211_fw_mem_dump_cb(void *ctx,
 		       context->request_id, dump_rsp->request_id,
 		       dump_rsp->dump_complete);
 		return;
-	} else {
-		complete(&context->response_event);
 	}
-	spin_unlock(&hdd_context_lock);
 
-	return;
+	complete(&context->response_event);
+	spin_unlock(&hdd_context_lock);
 }
 
 /**
@@ -212,7 +210,7 @@ static int __wlan_hdd_cfg80211_get_fw_mem_dump(struct wiphy *wiphy,
 
 	if (!hdd_ctx->fw_mem_dump_enabled) {
 		hdd_warn("FW memory dump not supported by this FW");
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 	}
 	qdf_ctx = cds_get_context(QDF_MODULE_ID_QDF_DEVICE);
 	if (!qdf_ctx) {
@@ -476,7 +474,7 @@ memdump_read_fail:
  * dump feature
  */
 static const struct file_operations memdump_fops = {
-	read: memdump_read
+	.read = memdump_read,
 };
 
 /**

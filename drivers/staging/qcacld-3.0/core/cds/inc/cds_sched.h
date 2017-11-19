@@ -318,6 +318,7 @@ typedef struct _cds_context_type {
 	void (*hdd_en_lro_in_cc_cb)(struct hdd_context_s *);
 	void (*hdd_disable_lro_in_cc_cb)(struct hdd_context_s *);
 	void (*hdd_set_rx_mode_rps_cb)(struct hdd_context_s *, void *, bool);
+	void (*hdd_ipa_set_mcc_mode_cb)(bool);
 
 	/* This list is not sessionized. This mandatory channel list would be
 	 * as per OEMs preference as per the regulatory/other considerations.
@@ -334,8 +335,11 @@ typedef struct _cds_context_type {
 	uint32_t hw_mode_change_in_progress;
 	uint16_t unsafe_channel_count;
 	uint16_t unsafe_channel_list[NUM_CHANNELS];
+	/* current system preference */
+	uint8_t cur_conc_system_pref;
 	qdf_work_t cds_recovery_work;
 	qdf_workqueue_t *cds_recovery_wq;
+	enum cds_hang_reason recovery_reason;
 } cds_context_type, *p_cds_contextType;
 
 extern struct _cds_sched_context *gp_cds_sched_context;
@@ -603,5 +607,11 @@ QDF_STATUS cds_shutdown_notifier_register(void (*cb)(void *priv), void *priv);
  * Return: None
  */
 void cds_shutdown_notifier_purge(void);
-
+/**
+ * cds_shutdown_notifier_call() - Call shutdown notifier call back
+ *
+ * Call registered shutdown notifier call back to indicate about remove or
+ * shutdown.
+ */
+void cds_shutdown_notifier_call(void);
 #endif /* #if !defined __CDS_SCHED_H */

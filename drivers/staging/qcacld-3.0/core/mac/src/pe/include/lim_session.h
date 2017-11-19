@@ -55,7 +55,7 @@ typedef struct tagComebackTimerInfo {
 	tpAniSirGlobal pMac;
 	uint8_t sessionID;
 	tLimMlmStates limPrevMlmState;  /* Previous MLM State */
-	tLimSmeStates limMlmState;      /* MLM State */
+	tLimMlmStates limMlmState;      /* MLM State */
 } tComebackTimerInfo;
 #endif /* WLAN_FEATURE_11W */
 /*--------------------------------------------------------------------------
@@ -282,14 +282,14 @@ typedef struct sPESession       /* Added to Support BT-AMP */
 	int8_t maxTxPower;   /* MIN (Regulatory and local power constraint) */
 	enum tQDF_ADAPTER_MODE pePersona;
 	int8_t txMgmtPower;
-	tAniBool is11Rconnection;
+	bool is11Rconnection;
 
 #ifdef FEATURE_WLAN_ESE
-	tAniBool isESEconnection;
+	bool isESEconnection;
 	tEsePEContext eseContext;
 #endif
-	tAniBool isFastTransitionEnabled;
-	tAniBool isFastRoamIniFeatureEnabled;
+	bool isFastTransitionEnabled;
+	bool isFastRoamIniFeatureEnabled;
 	tSirNoAParam p2pNoA;
 	tSirP2PNoaAttr p2pGoPsUpdate;
 	uint32_t defaultAuthFailureTimeout;
@@ -495,11 +495,16 @@ typedef struct sPESession       /* Added to Support BT-AMP */
 	uint8_t lim_non_ecsa_cap_num;
 #ifdef WLAN_FEATURE_FILS_SK
 	struct pe_fils_session *fils_info;
+	struct qdf_mac_addr dst_mac;
+	struct qdf_mac_addr src_mac;
+	uint16_t hlp_data_len;
+	uint8_t *hlp_data;
 #endif
 	uint8_t deauthmsgcnt;
 	uint8_t disassocmsgcnt;
 	bool enable_bcast_probe_rsp;
 	uint8_t ht_client_cnt;
+	bool force_24ghz_in_ht20;
 	bool ch_switch_in_progress;
 } tPESession, *tpPESession;
 

@@ -940,11 +940,11 @@ static void wlan_hdd_cancel_pending_roc(hdd_adapter_t *adapter)
 	mutex_unlock(&cfg_state->remain_on_chan_ctx_lock);
 
 	if (adapter->device_mode == QDF_P2P_GO_MODE) {
-		wlansap_cancel_remain_on_channel((WLAN_HDD_GET_CTX
-					(adapter))->pcds_context, roc_scan_id);
-	} else if (adapter->device_mode == QDF_P2P_CLIENT_MODE
-			|| adapter->device_mode ==
-			QDF_P2P_DEVICE_MODE) {
+		void *sap_ctx = WLAN_HDD_GET_SAP_CTX_PTR(adapter);
+
+		wlansap_cancel_remain_on_channel(sap_ctx, roc_scan_id);
+	} else if (adapter->device_mode == QDF_P2P_CLIENT_MODE ||
+		   adapter->device_mode == QDF_P2P_DEVICE_MODE) {
 		hdd_delete_all_action_frame_cookies(adapter);
 		sme_cancel_remain_on_channel(WLAN_HDD_GET_HAL_CTX
 				(adapter),
@@ -1017,7 +1017,7 @@ static void wlan_hdd_remain_on_chan_timeout(void *data)
 
 	if ((NULL == pAdapter) ||
 	    (WLAN_HDD_ADAPTER_MAGIC != pAdapter->magic)) {
-		hdd_err("pAdapter is invalid %p !!!", pAdapter);
+		hdd_err("pAdapter is invalid %pK !!!", pAdapter);
 		return;
 	}
 
@@ -1045,17 +1045,15 @@ static void wlan_hdd_remain_on_chan_timeout(void *data)
 
 	if ((QDF_STA_MODE == pAdapter->device_mode) ||
 	    (QDF_P2P_CLIENT_MODE == pAdapter->device_mode) ||
-	    (QDF_P2P_DEVICE_MODE == pAdapter->device_mode)
-	    ) {
+	    (QDF_P2P_DEVICE_MODE == pAdapter->device_mode)) {
 		hdd_delete_all_action_frame_cookies(pAdapter);
 		sme_cancel_remain_on_channel(WLAN_HDD_GET_HAL_CTX(pAdapter),
 			pAdapter->sessionId, roc_scan_id);
 	} else if ((QDF_SAP_MODE == pAdapter->device_mode) ||
-		   (QDF_P2P_GO_MODE == pAdapter->device_mode)
-		   ) {
-		wlansap_cancel_remain_on_channel(
-			(WLAN_HDD_GET_CTX(pAdapter))->pcds_context,
-			roc_scan_id);
+			(QDF_P2P_GO_MODE == pAdapter->device_mode)) {
+		void *sap_ctx = WLAN_HDD_GET_SAP_CTX_PTR(pAdapter);
+
+		wlansap_cancel_remain_on_channel(sap_ctx, roc_scan_id);
 	}
 
 	hdd_tdls_notify_p2p_roc(hdd_ctx, P2P_ROC_END);
@@ -1147,7 +1145,7 @@ static int wlan_hdd_execute_remain_on_channel(hdd_adapter_t *pAdapter,
 			mutex_lock(&cfgState->remain_on_chan_ctx_lock);
 			pAdapter->is_roc_inprogress = false;
 			pRemainChanCtx = cfgState->remain_on_chan_ctx;
-			hdd_debug("Freeing ROC ctx cfgState->remain_on_chan_ctx=%p",
+			hdd_debug("Freeing ROC ctx cfgState->remain_on_chan_ctx=%pK",
 				 cfgState->remain_on_chan_ctx);
 			if (pRemainChanCtx) {
 				if (qdf_mc_timer_destroy(
@@ -1188,7 +1186,7 @@ static int wlan_hdd_execute_remain_on_channel(hdd_adapter_t *pAdapter,
 			mutex_lock(&cfgState->remain_on_chan_ctx_lock);
 			pAdapter->is_roc_inprogress = false;
 			pRemainChanCtx = cfgState->remain_on_chan_ctx;
-			hdd_debug("Freeing ROC ctx cfgState->remain_on_chan_ctx=%p",
+			hdd_debug("Freeing ROC ctx cfgState->remain_on_chan_ctx=%pK",
 				 cfgState->remain_on_chan_ctx);
 			if (pRemainChanCtx) {
 				if (qdf_mc_timer_destroy(
@@ -1415,7 +1413,7 @@ static int wlan_hdd_request_remain_on_channel(struct wiphy *wiphy,
 			schedule_delayed_work(&pHddCtx->roc_req_work,
 			msecs_to_jiffies(
 				pHddCtx->config->p2p_listen_defer_interval));
-			hdd_debug("Defer interval is %hu, pAdapter %p",
+			hdd_debug("Defer interval is %hu, pAdapter %pK",
 				pHddCtx->config->p2p_listen_defer_interval,
 				pAdapter);
 			return 0;
@@ -3281,9 +3279,10 @@ static uint16_t get_rx_frame_freq_from_chan(uint32_t rx_chan)
 {
 	if (rx_chan <= MAX_NO_OF_2_4_CHANNELS)
 		return ieee80211_channel_to_frequency(rx_chan,
-						      NL80211_BAND_2GHZ);
+						      HDD_NL80211_BAND_2GHZ);
 
-	return ieee80211_channel_to_frequency(rx_chan, NL80211_BAND_5GHZ);
+	return ieee80211_channel_to_frequency(rx_chan,
+						HDD_NL80211_BAND_5GHZ);
 }
 
 static void indicate_rx_mgmt_over_nl80211(hdd_adapter_t *adapter,
@@ -3343,7 +3342,9 @@ void __hdd_indicate_mgmt_frame(hdd_adapter_t *adapter, uint32_t frm_len,
 	sub_type = WLAN_HDD_GET_SUBTYPE_FRM_FC(pb_frames[0]);
 	hdd_debug("Frame Type = %d subType = %d", type, sub_type);
 
-	if (is_non_probe_req_mgmt_frame(type, sub_type)) {
+	if (is_non_probe_req_mgmt_frame(type, sub_type) &&
+	    !qdf_is_macaddr_broadcast(
+	     (struct qdf_mac_addr *)&pb_frames[WLAN_HDD_80211_FRM_DA_OFFSET])) {
 		if (frm_len <= WLAN_HDD_80211_FRM_DA_OFFSET +
 		    QDF_MAC_ADDR_SIZE) {
 			hdd_err("Cannot parse dest mac addr len: %d", frm_len);

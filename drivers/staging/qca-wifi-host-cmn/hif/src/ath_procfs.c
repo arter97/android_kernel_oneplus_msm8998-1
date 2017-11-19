@@ -84,7 +84,7 @@ static ssize_t ath_procfs_diag_read(struct file *file, char __user *buf,
 		return -ENOMEM;
 	}
 
-	HIF_DBG("rd buff 0x%p cnt %zu offset 0x%x buf 0x%p",
+	HIF_DBG("rd buff 0x%pK cnt %zu offset 0x%x buf 0x%pK",
 		 read_buffer, count, (int)*pos, buf);
 
 	if (scn->bus_type == QDF_BUS_TYPE_SNOC) {
@@ -149,7 +149,7 @@ static ssize_t ath_procfs_diag_write(struct file *file,
 		return -EFAULT;
 	}
 
-	HIF_DBG("wr buff 0x%p buf 0x%p cnt %zu offset 0x%x value 0x%x",
+	HIF_DBG("wr buff 0x%pK buf 0x%pK cnt %zu offset 0x%x value 0x%x",
 		 write_buffer, buf, count,
 		 (int)*pos, *((uint32_t *) write_buffer));
 

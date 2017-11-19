@@ -33,7 +33,6 @@
 #include "wmi.h"
 #include "wmi_unified_api.h"
 #include "wma.h"
-#include "ol_defines.h"
 #include <wlan_nlink_srv.h>
 #include "host_diag_core_event.h"
 #include "qwlan_version.h"
@@ -1360,13 +1359,6 @@ int dbglog_report_enable(wmi_unified_t wmi_handle, bool isenable)
 {
 	int bitmap[2] = { 0 };
 
-	if (isenable > true) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-				("dbglog_report_enable:Invalid value %d\n",
-				 isenable));
-		return -EINVAL;
-	}
-
 	if (isenable) {
 		/* set the vap enable bitmap */
 		dbglog_set_vap_enable_bitmap(wmi_handle, 0xFFFF);
@@ -1692,18 +1684,22 @@ static int send_fw_diag_nl_data(const uint8_t *buffer, A_UINT32 len,
 static int
 process_fw_diag_event_data(uint8_t *datap, uint32_t num_data)
 {
-	uint32_t i;
 	uint32_t diag_type;
 	uint32_t nl_data_len; /* diag hdr + payload */
 	uint32_t diag_data_len; /* each fw diag payload */
 	struct wlan_diag_data *diag_data;
 
-	for (i = 0; i < num_data; i++) {
+	while (num_data > 0) {
 		diag_data = (struct wlan_diag_data *)datap;
 		diag_type = WLAN_DIAG_0_TYPE_GET(diag_data->word0);
 		diag_data_len = WLAN_DIAG_0_LEN_GET(diag_data->word0);
 		/* Length of diag struct and len of payload */
 		nl_data_len = sizeof(struct wlan_diag_data) + diag_data_len;
+		if (nl_data_len > num_data) {
+			AR_DEBUG_PRINTF(ATH_DEBUG_INFO,
+					("processed all the messages\n"));
+			return 0;
+		}
 
 		switch (diag_type) {
 		case DIAG_TYPE_FW_EVENT:
@@ -1717,6 +1713,7 @@ process_fw_diag_event_data(uint8_t *datap, uint32_t num_data)
 		}
 		/* Move to the next event and send to cnss-diag */
 		datap += nl_data_len;
+		num_data -= nl_data_len;
 	}
 
 	return 0;
@@ -4112,25 +4109,39 @@ static const struct file_operations fops_dbglog_block = {
 	.llseek = default_llseek,
 };
 
-static int dbglog_debugfs_init(wmi_unified_t wmi_handle)
+#ifdef WLAN_DEBUGFS
+
+static void dbglog_debugfs_init(wmi_unified_t wmi_handle)
 {
 
 	wmi_handle->debugfs_phy = debugfs_create_dir(CLD_DEBUGFS_DIR, NULL);
-	if (!wmi_handle->debugfs_phy)
-		return -ENOMEM;
+	if (!wmi_handle->debugfs_phy) {
+		qdf_print("Failed to create WMI debugfs");
+		return;
+	}
 
 	debugfs_create_file(DEBUGFS_BLOCK_NAME, 0400,
 			    wmi_handle->debugfs_phy, &wmi_handle->dbglog,
 			    &fops_dbglog_block);
-
-	return true;
 }
 
-static int dbglog_debugfs_remove(wmi_unified_t wmi_handle)
+static void dbglog_debugfs_remove(wmi_unified_t wmi_handle)
 {
 	debugfs_remove_recursive(wmi_handle->debugfs_phy);
-	return true;
 }
+
+#else
+
+static void dbglog_debugfs_init(wmi_unified_t wmi_handle)
+{
+}
+
+static void dbglog_debugfs_remove(wmi_unified_t wmi_handle)
+{
+}
+
+#endif /* End of WLAN_DEBUGFS */
+
 #endif /* WLAN_OPEN_SOURCE */
 
 /**

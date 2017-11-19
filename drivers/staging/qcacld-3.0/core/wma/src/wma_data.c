@@ -920,27 +920,21 @@ free_nbuf:
 }
 
 /**
- * wma_update_txrx_chainmask() - update txrx chainmask
- * @num_rf_chains: number rf chains
+ * wma_check_txrx_chainmask() - check txrx chainmask
+ * @num_rf_chains: number of rf chains
  * @cmd_value: command value
  *
- * Return: none
+ * Return: QDF_STATUS_SUCCESS for success or error code
  */
-void wma_update_txrx_chainmask(int num_rf_chains, int *cmd_value)
+QDF_STATUS wma_check_txrx_chainmask(int num_rf_chains, int cmd_value)
 {
-	if (*cmd_value > WMA_MAX_RF_CHAINS(num_rf_chains)) {
-		WMA_LOGE("%s: Chainmask value exceeds the maximum supported range setting it to maximum value.",
-			__func__);
-		WMA_LOGE("%s: Requested value %d Updated value %d",
-			__func__, *cmd_value, WMA_MAX_RF_CHAINS(num_rf_chains));
-		*cmd_value = WMA_MAX_RF_CHAINS(num_rf_chains);
-	} else if (*cmd_value < WMA_MIN_RF_CHAINS) {
-		WMA_LOGE("%s: Chainmask value is less than the minimum supported range setting it to minimum value.",
-			__func__);
-		WMA_LOGE("%s: Requested value %d Updated value %d",
-			__func__, *cmd_value, WMA_MIN_RF_CHAINS);
-		*cmd_value = WMA_MIN_RF_CHAINS;
+	if ((cmd_value > WMA_MAX_RF_CHAINS(num_rf_chains)) ||
+	    (cmd_value < WMA_MIN_RF_CHAINS)) {
+		WMA_LOGE("%s: Requested value %d over the range",
+			__func__, cmd_value);
+		return QDF_STATUS_E_INVAL;
 	}
+	return QDF_STATUS_SUCCESS;
 }
 
 /**
@@ -1918,7 +1912,7 @@ static void wma_set_thermal_level_ind(u_int8_t level)
 	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
 	cds_msg_t sme_msg = {0};
 
-	WMA_LOGI(FL("Thermal level: %d"), level);
+	WMA_LOGD(FL("Thermal level: %d"), level);
 
 	sme_msg.type = eWNI_SME_SET_THERMAL_LEVEL_IND;
 	sme_msg.bodyptr = NULL;
@@ -2184,7 +2178,7 @@ int wma_ibss_peer_info_event_handler(void *handle, uint8_t *data,
 
 	/*sanity check */
 	if ((num_peers > 32) || (NULL == peer_info)) {
-		WMA_LOGE("%s: Invalid event data from target num_peers %d peer_info %p",
+		WMA_LOGE("%s: Invalid event data from target num_peers %d peer_info %pK",
 			__func__, num_peers, peer_info);
 		status = 1;
 		goto send_response;
@@ -2226,7 +2220,7 @@ send_response:
 	cds_msg.bodyval = 0;
 
 	if (QDF_STATUS_SUCCESS !=
-	    cds_mq_post_message(CDS_MQ_ID_SME, (cds_msg_t *) &cds_msg)) {
+	    cds_mq_post_message(QDF_MODULE_ID_SME, (cds_msg_t *) &cds_msg)) {
 		WMA_LOGE("%s: could not post peer info rsp msg to SME",
 			 __func__);
 		/* free the mem and return */
@@ -2270,7 +2264,7 @@ int wma_fast_tx_fail_event_handler(void *handle, uint8_t *data,
 	if (wma->hddTxFailCb != NULL)
 		wma->hddTxFailCb(peer_mac, tx_fail_cnt);
 	else
-		WMA_LOGE("%s: HDD callback is %p", __func__, wma->hddTxFailCb);
+		WMA_LOGE("%s: HDD callback is %pK", __func__, wma->hddTxFailCb);
 
 	return 0;
 }
@@ -2521,6 +2515,58 @@ void wmi_desc_put(tp_wma_handle wma_handle, struct wmi_desc_t *wmi_desc)
 }
 
 /**
+ * rate_pream: Mapping from data rates to preamble.
+ */
+static uint32_t rate_pream[] = {WMI_RATE_PREAMBLE_CCK, WMI_RATE_PREAMBLE_CCK,
+				WMI_RATE_PREAMBLE_CCK, WMI_RATE_PREAMBLE_CCK,
+				WMI_RATE_PREAMBLE_OFDM, WMI_RATE_PREAMBLE_OFDM,
+				WMI_RATE_PREAMBLE_OFDM, WMI_RATE_PREAMBLE_OFDM,
+				WMI_RATE_PREAMBLE_OFDM, WMI_RATE_PREAMBLE_OFDM,
+				WMI_RATE_PREAMBLE_OFDM, WMI_RATE_PREAMBLE_OFDM};
+
+/**
+ * rate_mcs: Mapping from data rates to MCS (+4 for OFDM to keep the sequence).
+ */
+static uint32_t rate_mcs[] = {WMI_MAX_CCK_TX_RATE_1M, WMI_MAX_CCK_TX_RATE_2M,
+			      WMI_MAX_CCK_TX_RATE_5_5M, WMI_MAX_CCK_TX_RATE_11M,
+			      WMI_MAX_OFDM_TX_RATE_6M + 4,
+			      WMI_MAX_OFDM_TX_RATE_9M + 4,
+			      WMI_MAX_OFDM_TX_RATE_12M + 4,
+			      WMI_MAX_OFDM_TX_RATE_18M + 4,
+			      WMI_MAX_OFDM_TX_RATE_24M + 4,
+			      WMI_MAX_OFDM_TX_RATE_36M + 4,
+			      WMI_MAX_OFDM_TX_RATE_48M + 4,
+			      WMI_MAX_OFDM_TX_RATE_54M + 4};
+
+#define WMA_TX_SEND_MGMT_TYPE 0
+#define WMA_TX_SEND_DATA_TYPE 1
+
+/**
+ * wma_update_tx_send_params() - Update tx_send_params TLV info
+ * @tx_param: Pointer to tx_send_params
+ * @rid: rate ID passed by PE
+ *
+ * Return: None
+ */
+static void wma_update_tx_send_params(struct tx_send_params *tx_param,
+				      enum rateid rid)
+{
+	uint8_t  preamble = 0, nss = 0, rix = 0;
+
+	preamble = rate_pream[rid];
+	rix = rate_mcs[rid];
+
+	tx_param->mcs_mask = (1 << rix);
+	tx_param->nss_mask = (1 << nss);
+	tx_param->preamble_type = (1 << preamble);
+	tx_param->frame_type = WMA_TX_SEND_MGMT_TYPE;
+
+	WMA_LOGD(FL("rate_id: %d, mcs: %0x, nss: %0x, preamble: %0x"),
+		     rid, tx_param->mcs_mask, tx_param->nss_mask,
+		     tx_param->preamble_type);
+}
+
+/**
  * wma_tx_packet() - Sends Tx Frame to TxRx
  * @wma_context: wma context
  * @tx_frame: frame buffer
@@ -2544,7 +2590,8 @@ QDF_STATUS wma_tx_packet(void *wma_context, void *tx_frame, uint16_t frmLen,
 			 eFrameType frmType, eFrameTxDir txDir, uint8_t tid,
 			 pWMATxRxCompFunc tx_frm_download_comp_cb, void *pData,
 			 pWMAAckFnTxComp tx_frm_ota_comp_cb, uint8_t tx_flag,
-			 uint8_t vdev_id, bool tdlsFlag, uint16_t channel_freq)
+			 uint8_t vdev_id, bool tdlsFlag, uint16_t channel_freq,
+			 enum rateid rid)
 {
 	tp_wma_handle wma_handle = (tp_wma_handle) (wma_context);
 	int32_t status;
@@ -2872,7 +2919,7 @@ QDF_STATUS wma_tx_packet(void *wma_context, void *tx_frame, uint16_t frmLen,
 
 	if (wma_handle->interfaces[vdev_id].scan_info.chan_freq != 0) {
 		chanfreq = wma_handle->interfaces[vdev_id].scan_info.chan_freq;
-		WMA_LOGI("%s: Preauth frame on channel %d", __func__, chanfreq);
+		WMA_LOGD("%s: Preauth frame on channel %d", __func__, chanfreq);
 	} else if (pFc->subType == SIR_MAC_MGMT_PROBE_RSP) {
 		if ((wma_is_vdev_in_ap_mode(wma_handle, vdev_id)) &&
 		    (0 != wma_handle->interfaces[vdev_id].mhz))
@@ -2907,10 +2954,21 @@ QDF_STATUS wma_tx_packet(void *wma_context, void *tx_frame, uint16_t frmLen,
 		mgmt_param.pdata = pData;
 		mgmt_param.chanfreq = chanfreq;
 		mgmt_param.qdf_ctx = cds_get_context(QDF_MODULE_ID_QDF_DEVICE);
+		/*
+		 * Update the tx_params TLV only for rates
+		 * other than 1Mbps and 6 Mbps
+		 */
+		if (rid < RATEID_DEFAULT &&
+		    (rid != RATEID_1MBPS && rid != RATEID_6MBPS)) {
+			WMA_LOGD(FL("using rate id: %d for Tx"), rid);
+			mgmt_param.tx_params_valid = true;
+			wma_update_tx_send_params(&mgmt_param.tx_param, rid);
+		}
+
 		wmi_desc = wmi_desc_get(wma_handle);
 		if (!wmi_desc) {
 			/* Countinous failure can cause flooding of logs */
-			if (!(wma_handle->wmi_desc_fail_count %
+			if (!qdf_do_mod(wma_handle->wmi_desc_fail_count,
 				MAX_PRINT_FAILURE_CNT))
 				WMA_LOGE("%s: Failed to get wmi_desc",
 					__func__);
@@ -2949,7 +3007,7 @@ QDF_STATUS wma_tx_packet(void *wma_context, void *tx_frame, uint16_t frmLen,
 			tx_frm_download_comp_cb(wma_handle->mac_context,
 						tx_frame,
 						WMA_TX_FRAME_BUFFER_FREE);
-		if (!(wma_handle->tx_fail_cnt % MAX_PRINT_FAILURE_CNT))
+		if (!qdf_do_mod(wma_handle->tx_fail_cnt, MAX_PRINT_FAILURE_CNT))
 			WMA_LOGE("%s: Failed to send Mgmt Frame", __func__);
 		else
 			WMA_LOGD("%s: Failed to send Mgmt Frame", __func__);
@@ -3045,7 +3103,7 @@ void ol_rx_aggregation_hole(uint32_t hole_info)
 	cds_msg.bodyptr = rx_aggr_hole_event;
 	cds_msg.bodyval = 0;
 
-	status = cds_mq_post_message(CDS_MQ_ID_SME, &cds_msg);
+	status = cds_mq_post_message(QDF_MODULE_ID_SME, &cds_msg);
 	if (status != QDF_STATUS_SUCCESS) {
 		WMA_LOGE("%s: Failed to post aggr event to SME", __func__);
 		qdf_mem_free(rx_aggr_hole_event);
@@ -3122,7 +3180,7 @@ void ol_rx_err(ol_pdev_handle pdev, uint8_t vdev_id,
 	cds_msg.bodyptr = (void *) mic_err_ind;
 
 	if (QDF_STATUS_SUCCESS !=
-		cds_mq_post_message(CDS_MQ_ID_SME, (cds_msg_t *) &cds_msg)) {
+		cds_mq_post_message(QDF_MODULE_ID_SME, (cds_msg_t *) &cds_msg)) {
 		WMA_LOGE("%s: could not post mic failure indication to SME",
 			 __func__);
 		qdf_mem_free((void *)mic_err_ind);
@@ -3153,7 +3211,7 @@ void wma_tx_abort(uint8_t vdev_id)
 
 	iface = &wma->interfaces[vdev_id];
 	if (!iface->handle) {
-		WMA_LOGE("%s: Failed to get iface handle: %p",
+		WMA_LOGE("%s: Failed to get iface handle: %pK",
 			 __func__, iface->handle);
 		return;
 	}
@@ -3276,7 +3334,7 @@ wma_indicate_err(
 		cds_msg.type = eWNI_SME_MIC_FAILURE_IND;
 		cds_msg.bodyptr = (void *) mic_err_ind;
 		if (QDF_STATUS_SUCCESS !=
-			cds_mq_post_message(CDS_MQ_ID_SME,
+			cds_mq_post_message(QDF_MODULE_ID_SME,
 				 (cds_msg_t *) &cds_msg)) {
 			WMA_LOGE("%s: mic failure ind post to SME failed",
 					 __func__);

@@ -314,6 +314,27 @@ uint8_t lim_check_mcs_set(tpAniSirGlobal pMac, uint8_t *supportedMCSSet)
 #define SECURITY_SUITE_TYPE_TKIP 0x2
 #define SECURITY_SUITE_TYPE_CCMP 0x4
 #define SECURITY_SUITE_TYPE_WEP104 0x4
+#define SECURITY_SUITE_TYPE_GCMP 0x8
+#define SECURITY_SUITE_TYPE_GCMP_256 0x9
+
+/**
+ * is_non_rsn_cipher()- API to check whether cipher suit is rsn or not
+ * @cipher_suite: cipher suit
+ *
+ * Return: True in case non ht cipher else false
+ */
+static inline bool is_non_rsn_cipher(uint8_t cipher_suite)
+{
+	uint8_t cipher_mask;
+
+	cipher_mask = cipher_suite & SECURITY_SUITE_TYPE_MASK;
+	if ((cipher_mask == SECURITY_SUITE_TYPE_CCMP) ||
+	    (cipher_mask == SECURITY_SUITE_TYPE_GCMP) ||
+	    (cipher_mask == SECURITY_SUITE_TYPE_GCMP_256))
+		return false;
+
+	return true;
+}
 
 /**
  * lim_check_rx_rsn_ie_match()- validate received rsn ie with supported cipher
@@ -372,20 +393,14 @@ lim_check_rx_rsn_ie_match(tpAniSirGlobal mac_ctx, tDot11fIERSN rx_rsn_ie,
 			}
 		}
 
-		if ((sta_is_ht)
+		if (sta_is_ht)
 #ifdef ANI_LITTLE_BYTE_ENDIAN
-			&&
-			((rx_rsn_ie.pwise_cipher_suites[i][3] &
-				 SECURITY_SUITE_TYPE_MASK) ==
-					SECURITY_SUITE_TYPE_CCMP))
+			only_non_ht_cipher = is_non_rsn_cipher(
+				rx_rsn_ie.pwise_cipher_suites[i][3]);
 #else
-			&&
-			((rx_rsn_ie.pwise_cipher_suites[i][0] &
-				 SECURITY_SUITE_TYPE_MASK) ==
-					SECURITY_SUITE_TYPE_CCMP))
+			only_non_ht_cipher = is_non_rsn_cipher(
+				rx_rsn_ie.pwise_cipher_suites[i][0]);
 #endif
-			only_non_ht_cipher = 0;
-
 	}
 
 	if ((!match) || ((sta_is_ht) && only_non_ht_cipher)) {
@@ -1393,18 +1408,8 @@ tSirRetStatus lim_populate_vht_mcs_set(tpAniSirGlobal mac_ctx,
 		QDF_MIN(rates->vhtRxHighestDataRate,
 			peer_vht_caps->rxHighSupDataRate);
 
-	if (session_entry && session_entry->nss == NSS_2x2_MODE) {
-		if (mac_ctx->lteCoexAntShare &&
-			IS_24G_CH(session_entry->currentOperChannel)) {
-			if (IS_2X2_CHAIN(session_entry->chainMask))
-				mcs_map_mask2x2 = MCSMAPMASK2x2;
-			else
-				pe_err("2x2 not enabled %d",
-					session_entry->chainMask);
-		} else {
-			mcs_map_mask2x2 = MCSMAPMASK2x2;
-		}
-	}
+	if (session_entry && session_entry->nss == NSS_2x2_MODE)
+		mcs_map_mask2x2 = MCSMAPMASK2x2;
 
 	if ((peer_vht_caps->txMCSMap & mcs_map_mask) <
 	    (rates->vhtRxMCSMap & mcs_map_mask)) {
@@ -3503,6 +3508,7 @@ tSirRetStatus lim_sta_send_add_bss(tpAniSirGlobal pMac, tpSirAssocRsp pAssocRsp,
 	tDot11fIEVHTCaps *vht_caps = NULL;
 	tDot11fIEVHTOperation *vht_oper = NULL;
 	tAddStaParams *sta_context;
+	uint32_t listen_interval = WNI_CFG_LISTEN_INTERVAL_STADEF;
 
 	/* Package SIR_HAL_ADD_BSS_REQ message parameters */
 	pAddBssParams = qdf_mem_malloc(sizeof(tAddBssParams));
@@ -3680,8 +3686,10 @@ tSirRetStatus lim_sta_send_add_bss(tpAniSirGlobal pMac, tpSirAssocRsp pAssocRsp,
 
 	qdf_mem_copy(pAddBssParams->staContext.bssId,
 			bssDescription->bssId, sizeof(tSirMacAddr));
-	pAddBssParams->staContext.listenInterval =
-		bssDescription->beaconInterval;
+	if (wlan_cfg_get_int(pMac, WNI_CFG_LISTEN_INTERVAL, &listen_interval) !=
+				eSIR_SUCCESS)
+		pe_err("Couldn't get LISTEN_INTERVAL");
+	pAddBssParams->staContext.listenInterval = listen_interval;
 
 	/* Fill Assoc id from the dph table */
 	pStaDs = dph_lookup_hash_entry(pMac, pAddBssParams->staContext.bssId,
@@ -4012,6 +4020,7 @@ tSirRetStatus lim_sta_send_add_bss_pre_assoc(tpAniSirGlobal pMac, uint8_t update
 	uint8_t chanWidthSupp = 0;
 	tDot11fIEVHTOperation *vht_oper = NULL;
 	tDot11fIEVHTCaps *vht_caps = NULL;
+	uint32_t listen_interval = WNI_CFG_LISTEN_INTERVAL_STADEF;
 
 	tpSirBssDescription bssDescription =
 		&psessionEntry->pLimJoinReq->bssDescription;
@@ -4215,9 +4224,10 @@ tSirRetStatus lim_sta_send_add_bss_pre_assoc(tpAniSirGlobal pMac, uint8_t update
 
 	qdf_mem_copy(pAddBssParams->staContext.bssId,
 			bssDescription->bssId, sizeof(tSirMacAddr));
-	pAddBssParams->staContext.listenInterval =
-		bssDescription->beaconInterval;
-
+	if (wlan_cfg_get_int(pMac, WNI_CFG_LISTEN_INTERVAL, &listen_interval) !=
+				eSIR_SUCCESS)
+		pe_err("Couldn't get LISTEN_INTERVAL");
+	pAddBssParams->staContext.listenInterval = listen_interval;
 	pAddBssParams->staContext.assocId = 0;
 	pAddBssParams->staContext.uAPSD = 0;
 	pAddBssParams->staContext.maxSPLen = 0;

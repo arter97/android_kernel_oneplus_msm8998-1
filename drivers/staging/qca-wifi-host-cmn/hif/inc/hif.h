@@ -127,6 +127,7 @@ struct qca_napi_stat {
 	uint32_t napi_budget_uses[QCA_NAPI_NUM_BUCKETS];
 	uint32_t time_limit_reached;
 	uint32_t rxpkt_thresh_reached;
+	unsigned long long napi_max_poll_time;
 };
 
 /**
@@ -369,6 +370,7 @@ struct hif_driver_state_callbacks {
 	bool (*is_recovery_in_progress)(void *context);
 	bool (*is_load_unload_in_progress)(void *context);
 	bool (*is_driver_unloading)(void *context);
+	bool (*is_target_ready)(void *context);
 };
 
 /* This API detaches the HTC layer from the HIF device */
@@ -460,7 +462,7 @@ static inline void *hif_get_ce_handle(struct hif_opaque_softc *hif_ctx, int ret)
 #define CONFIG_DISABLE_CDC_MAX_PERF_WAR 0
 
 void hif_ipa_get_ce_resource(struct hif_opaque_softc *hif_ctx,
-			     qdf_dma_addr_t *ce_sr_base_paddr,
+			     qdf_shared_mem_t **ce_sr,
 			     uint32_t *ce_sr_ring_size,
 			     qdf_dma_addr_t *ce_reg_paddr);
 
@@ -527,6 +529,12 @@ struct hif_pipe_addl_info {
 	struct hif_ul_pipe_info ul_pipe;
 	struct hif_dl_pipe_info dl_pipe;
 };
+
+#ifdef CONFIG_SLUB_DEBUG_ON
+#define MSG_FLUSH_NUM 16
+#else /* PERF build */
+#define MSG_FLUSH_NUM 32
+#endif /* SLUB_DEBUG_ON */
 
 struct hif_bus_id;
 
@@ -653,6 +661,22 @@ enum ipa_hw_type hif_get_ipa_hw_type(void)
 {
 	return ipa_get_hw_type();
 }
+
+/**
+ * hif_get_ipa_present() - get IPA hw status
+ *
+ * This API return the IPA hw status.
+ *
+ * Return: true if IPA is present or false otherwise
+ */
+static inline
+bool hif_get_ipa_present(void)
+{
+	if (ipa_uc_reg_rdyCB(NULL) != -EPERM)
+		return true;
+	else
+		return false;
+}
 #endif
 int hif_bus_resume(struct hif_opaque_softc *hif_ctx);
 /**
@@ -755,4 +779,40 @@ hif_reg_based_get_target_info(struct hif_opaque_softc *hif_ctx,
 }
 #endif
 
+/**
+ * hif_set_ce_service_max_yield_time() - sets CE service max yield time
+ * @hif: hif context
+ * @ce_service_max_yield_time: CE service max yield time to set
+ *
+ * This API storess CE service max yield time in hif context based
+ * on ini value.
+ *
+ * Return: void
+ */
+void hif_set_ce_service_max_yield_time(struct hif_opaque_softc *hif,
+				       uint32_t ce_service_max_yield_time);
+
+/**
+ * hif_get_ce_service_max_yield_time() - get CE service max yield time
+ * @hif: hif context
+ *
+ * This API returns CE service max yield time.
+ *
+ * Return: CE service max yield time
+ */
+unsigned long long
+hif_get_ce_service_max_yield_time(struct hif_opaque_softc *hif);
+
+/**
+ * hif_set_ce_service_max_rx_ind_flush() - sets CE service max rx ind flush
+ * @hif: hif context
+ * @ce_service_max_rx_ind_flush: CE service max rx ind flush to set
+ *
+ * This API stores CE service max rx ind flush in hif context based
+ * on ini value.
+ *
+ * Return: void
+ */
+void hif_set_ce_service_max_rx_ind_flush(struct hif_opaque_softc *hif,
+				       uint8_t ce_service_max_rx_ind_flush);
 #endif /* _HIF_H_ */

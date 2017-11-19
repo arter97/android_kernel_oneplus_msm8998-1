@@ -160,7 +160,7 @@ static void hdd_get_tsm_stats_cb(tAniTrafStrmMetrics tsm_metrics,
 	hdd_adapter_t *adapter = NULL;
 
 	if (NULL == context) {
-		hdd_err("Bad param, context [%p]", context);
+		hdd_err("Bad param, context [%pK]", context);
 		return;
 	}
 
@@ -181,7 +181,7 @@ static void hdd_get_tsm_stats_cb(tAniTrafStrmMetrics tsm_metrics,
 		 * nothing we can do
 		 */
 		spin_unlock(&hdd_context_lock);
-		hdd_warn("Invalid context, adapter [%p] magic [%08x]",
+		hdd_warn("Invalid context, adapter [%pK] magic [%08x]",
 			  adapter, stats_context->magic);
 		return;
 	}
@@ -855,7 +855,9 @@ void hdd_wma_send_fastreassoc_cmd(hdd_adapter_t *adapter,
 {
 	QDF_STATUS status;
 	hdd_wext_state_t *wext_state = WLAN_HDD_GET_WEXT_STATE_PTR(adapter);
+	hdd_station_ctx_t *hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
 	tCsrRoamProfile *profile = &wext_state->roamProfile;
+	tSirMacAddr connected_bssid = {0};
 	struct wma_roam_invoke_cmd *fastreassoc;
 	cds_msg_t msg = {0};
 
@@ -864,8 +866,16 @@ void hdd_wma_send_fastreassoc_cmd(hdd_adapter_t *adapter,
 		hdd_err("qdf_mem_malloc failed for fastreassoc");
 		return;
 	}
+	if (hdd_sta_ctx) {
+		qdf_mem_copy(connected_bssid,
+			     hdd_sta_ctx->conn_info.bssId.bytes, ETH_ALEN);
+		/* if both are same then set the flag */
+		if (!qdf_mem_cmp(connected_bssid, bssid, ETH_ALEN)) {
+			fastreassoc->is_same_bssid = true;
+			hdd_debug("bssid same, bssid[%pM]", bssid);
+		}
+	}
 	fastreassoc->vdev_id = adapter->sessionId;
-	fastreassoc->channel = channel;
 	fastreassoc->bssid[0] = bssid[0];
 	fastreassoc->bssid[1] = bssid[1];
 	fastreassoc->bssid[2] = bssid[2];
@@ -875,8 +885,10 @@ void hdd_wma_send_fastreassoc_cmd(hdd_adapter_t *adapter,
 
 	status = sme_get_beacon_frm(WLAN_HDD_GET_HAL_CTX(adapter), profile,
 						bssid, &fastreassoc->frame_buf,
-						&fastreassoc->frame_len);
+						&fastreassoc->frame_len,
+						&channel);
 
+	fastreassoc->channel = channel;
 	if (QDF_STATUS_SUCCESS != status) {
 		hdd_warn("sme_get_beacon_frm failed");
 		fastreassoc->frame_buf = NULL;
@@ -2313,8 +2325,9 @@ static int hdd_set_dwell_time(hdd_adapter_t *adapter, uint8_t *command)
 	tHalHandle hHal;
 	struct hdd_config *pCfg;
 	uint8_t *value = command;
-	tSmeConfigParams smeConfig;
+	tSmeConfigParams *sme_config;
 	int val = 0, temp = 0;
+	int retval = 0;
 
 	pCfg = (WLAN_HDD_GET_CTX(adapter))->config;
 	hHal = WLAN_HDD_GET_HAL_CTX(adapter);
@@ -2323,8 +2336,13 @@ static int hdd_set_dwell_time(hdd_adapter_t *adapter, uint8_t *command)
 		return -EINVAL;
 	}
 
-	qdf_mem_zero(&smeConfig, sizeof(smeConfig));
-	sme_get_config_param(hHal, &smeConfig);
+	sme_config = qdf_mem_malloc(sizeof(*sme_config));
+	if (!sme_config) {
+		hdd_err("failed to allocate memory for sme_config");
+		return -ENOMEM;
+	}
+	qdf_mem_zero(sme_config, sizeof(*sme_config));
+	sme_get_config_param(hHal, sme_config);
 
 	if (strncmp(command, "SETDWELLTIME ACTIVE MAX", 23) == 0) {
 		if (drv_cmd_validate(command, 23))
@@ -2335,11 +2353,12 @@ static int hdd_set_dwell_time(hdd_adapter_t *adapter, uint8_t *command)
 		if (temp != 0 || val < CFG_ACTIVE_MAX_CHANNEL_TIME_MIN ||
 		    val > CFG_ACTIVE_MAX_CHANNEL_TIME_MAX) {
 			hdd_err("argument passed for SETDWELLTIME ACTIVE MAX is incorrect");
-			return -EFAULT;
+			retval = -EFAULT;
+			goto free;
 		}
 		pCfg->nActiveMaxChnTime = val;
-		smeConfig.csrConfig.nActiveMaxChnTime = val;
-		sme_update_config(hHal, &smeConfig);
+		sme_config->csrConfig.nActiveMaxChnTime = val;
+		sme_update_config(hHal, sme_config);
 	} else if (strncmp(command, "SETDWELLTIME ACTIVE MIN", 23) == 0) {
 		if (drv_cmd_validate(command, 23))
 			return -EINVAL;
@@ -2349,11 +2368,12 @@ static int hdd_set_dwell_time(hdd_adapter_t *adapter, uint8_t *command)
 		if (temp != 0 || val < CFG_ACTIVE_MIN_CHANNEL_TIME_MIN ||
 		    val > CFG_ACTIVE_MIN_CHANNEL_TIME_MAX) {
 			hdd_err("argument passed for SETDWELLTIME ACTIVE MIN is incorrect");
-			return -EFAULT;
+			retval = -EFAULT;
+			goto free;
 		}
 		pCfg->nActiveMinChnTime = val;
-		smeConfig.csrConfig.nActiveMinChnTime = val;
-		sme_update_config(hHal, &smeConfig);
+		sme_config->csrConfig.nActiveMinChnTime = val;
+		sme_update_config(hHal, sme_config);
 	} else if (strncmp(command, "SETDWELLTIME PASSIVE MAX", 24) == 0) {
 		if (drv_cmd_validate(command, 24))
 			return -EINVAL;
@@ -2363,11 +2383,12 @@ static int hdd_set_dwell_time(hdd_adapter_t *adapter, uint8_t *command)
 		if (temp != 0 || val < CFG_PASSIVE_MAX_CHANNEL_TIME_MIN ||
 		    val > CFG_PASSIVE_MAX_CHANNEL_TIME_MAX) {
 			hdd_err("argument passed for SETDWELLTIME PASSIVE MAX is incorrect");
-			return -EFAULT;
+			retval = -EFAULT;
+			goto free;
 		}
 		pCfg->nPassiveMaxChnTime = val;
-		smeConfig.csrConfig.nPassiveMaxChnTime = val;
-		sme_update_config(hHal, &smeConfig);
+		sme_config->csrConfig.nPassiveMaxChnTime = val;
+		sme_update_config(hHal, sme_config);
 	} else if (strncmp(command, "SETDWELLTIME PASSIVE MIN", 24) == 0) {
 		if (drv_cmd_validate(command, 24))
 			return -EINVAL;
@@ -2377,11 +2398,12 @@ static int hdd_set_dwell_time(hdd_adapter_t *adapter, uint8_t *command)
 		if (temp != 0 || val < CFG_PASSIVE_MIN_CHANNEL_TIME_MIN ||
 		    val > CFG_PASSIVE_MIN_CHANNEL_TIME_MAX) {
 			hdd_err("argument passed for SETDWELLTIME PASSIVE MIN is incorrect");
-			return -EFAULT;
+			retval = -EFAULT;
+			goto free;
 		}
 		pCfg->nPassiveMinChnTime = val;
-		smeConfig.csrConfig.nPassiveMinChnTime = val;
-		sme_update_config(hHal, &smeConfig);
+		sme_config->csrConfig.nPassiveMinChnTime = val;
+		sme_update_config(hHal, sme_config);
 	} else if (strncmp(command, "SETDWELLTIME", 12) == 0) {
 		if (drv_cmd_validate(command, 12))
 			return -EINVAL;
@@ -2391,16 +2413,20 @@ static int hdd_set_dwell_time(hdd_adapter_t *adapter, uint8_t *command)
 		if (temp != 0 || val < CFG_ACTIVE_MAX_CHANNEL_TIME_MIN ||
 		    val > CFG_ACTIVE_MAX_CHANNEL_TIME_MAX) {
 			hdd_err("argument passed for SETDWELLTIME is incorrect");
-			return -EFAULT;
+			retval = -EFAULT;
+			goto free;
 		}
 		pCfg->nActiveMaxChnTime = val;
-		smeConfig.csrConfig.nActiveMaxChnTime = val;
-		sme_update_config(hHal, &smeConfig);
+		sme_config->csrConfig.nActiveMaxChnTime = val;
+		sme_update_config(hHal, sme_config);
 	} else {
-		return -EINVAL;
+		retval = -EINVAL;
+		goto free;
 	}
 
-	return 0;
+free:
+	qdf_mem_free(sme_config);
+	return retval;
 }
 
 static void hdd_get_link_status_cb(uint8_t status, void *context)
@@ -2409,7 +2435,7 @@ static void hdd_get_link_status_cb(uint8_t status, void *context)
 	hdd_adapter_t *adapter;
 
 	if (NULL == context) {
-		hdd_err("Bad context [%p]", context);
+		hdd_err("Bad context [%pK]", context);
 		return;
 	}
 
@@ -2425,7 +2451,7 @@ static void hdd_get_link_status_cb(uint8_t status, void *context)
 		 * nothing we can do
 		 */
 		spin_unlock(&hdd_context_lock);
-		hdd_warn("Invalid context, adapter [%p] magic [%08x]",
+		hdd_warn("Invalid context, adapter [%pK] magic [%08x]",
 			  adapter, pLinkContext->magic);
 		return;
 	}
@@ -2466,7 +2492,7 @@ static int wlan_hdd_get_link_status(hdd_adapter_t *adapter)
 	QDF_STATUS hstatus;
 	unsigned long rc;
 
-	if (cds_is_driver_recovering()) {
+	if (cds_is_driver_recovering() || cds_is_driver_in_bad_state()) {
 		hdd_warn("Recovery in Progress. State: 0x%x Ignore!!!",
 			 cds_get_driver_state());
 		return 0;
@@ -3028,8 +3054,8 @@ static int drv_cmd_country(hdd_adapter_t *adapter,
 			country_code,
 			adapter,
 			hdd_ctx->pcds_context,
-			eSIR_TRUE,
-			eSIR_TRUE);
+			true,
+			true);
 	if (status == QDF_STATUS_SUCCESS) {
 		rc = wait_for_completion_timeout(
 			&adapter->change_country_code,
@@ -3322,7 +3348,7 @@ static int drv_cmd_set_roam_mode(hdd_adapter_t *adapter,
 	value = value + SIZE_OF_SETROAMMODE + 1;
 
 	/* Convert the value from ascii to integer */
-	ret = kstrtou8(value, SIZE_OF_SETROAMMODE, &roamMode);
+	ret = kstrtou8(value, 10, &roamMode);
 	if (ret < 0) {
 		/*
 		 * If the input value is greater than max value of datatype,
@@ -4507,8 +4533,8 @@ static int drv_cmd_fast_reassoc(hdd_adapter_t *adapter,
 	}
 
 	/* Check channel number is a valid channel number */
-	if (QDF_STATUS_SUCCESS !=
-		wlan_hdd_validate_operation_channel(adapter, channel)) {
+	if (channel && (QDF_STATUS_SUCCESS !=
+		wlan_hdd_validate_operation_channel(adapter, channel))) {
 		hdd_err("Invalid Channel [%d]", channel);
 		return -EINVAL;
 	}

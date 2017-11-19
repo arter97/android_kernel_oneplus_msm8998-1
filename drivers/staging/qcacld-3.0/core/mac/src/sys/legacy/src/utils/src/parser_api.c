@@ -684,17 +684,6 @@ populate_dot11f_ht_caps(tpAniSirGlobal pMac,
 				pMac->roam.configParam.disable_high_ht_mcs_2x2;
 		pe_debug("disable HT high MCS INI param[%d]",
 			 disable_high_ht_mcs_2x2);
-
-		if (pMac->lteCoexAntShare
-		    && (IS_24G_CH(psessionEntry->currentOperChannel))) {
-			if (!(IS_2X2_CHAIN(psessionEntry->chainMask))) {
-				pDot11f->supportedMCSSet[1] = 0;
-				if (LIM_IS_STA_ROLE(psessionEntry)) {
-					pDot11f->mimoPowerSave =
-						psessionEntry->smpsMode;
-				}
-			}
-		}
 		if (psessionEntry->nss == NSS_1x1_MODE) {
 			pDot11f->supportedMCSSet[1] = 0;
 		} else if (IS_24G_CH(psessionEntry->currentOperChannel) &&
@@ -1071,13 +1060,6 @@ populate_dot11f_vht_caps(tpAniSirGlobal pMac,
 
 	pDot11f->reserved3 = 0;
 	if (psessionEntry) {
-		if (pMac->lteCoexAntShare
-		    && (IS_24G_CH(psessionEntry->currentOperChannel))) {
-			if (!(IS_2X2_CHAIN(psessionEntry->chainMask))) {
-				pDot11f->txMCSMap |= DISABLE_NSS2_MCS;
-				pDot11f->rxMCSMap |= DISABLE_NSS2_MCS;
-			}
-		}
 		if (psessionEntry->nss == NSS_1x1_MODE) {
 			pDot11f->txMCSMap |= DISABLE_NSS2_MCS;
 			pDot11f->rxMCSMap |= DISABLE_NSS2_MCS;
@@ -2153,14 +2135,15 @@ sir_convert_probe_req_frame2_struct(tpAniSirGlobal pMac,
 	}
 	/* & "transliterate" from a 'tDot11fProbeRequestto' a 'tSirProbeReq'... */
 	if (!pr.SSID.present) {
-		pe_warn("Mandatory IE SSID not present!");
+		pe_debug_rate_limited(30, "Mandatory IE SSID not present!");
 	} else {
 		pProbeReq->ssidPresent = 1;
 		convert_ssid(pMac, &pProbeReq->ssId, &pr.SSID);
 	}
 
 	if (!pr.SuppRates.present) {
-		pe_warn("Mandatory IE Supported Rates not present!");
+		pe_debug_rate_limited(30,
+				"Mandatory IE Supported Rates not present!");
 		return eSIR_FAILURE;
 	} else {
 		pProbeReq->suppRatesPresent = 1;
@@ -2258,6 +2241,72 @@ sir_validate_and_rectify_ies(tpAniSirGlobal mac_ctx,
 	return eSIR_SUCCESS;
 }
 
+/**
+ * update_esp_data: update ESP params from beacon/probe response
+ * @esp_information: pointer to sir_esp_information
+ * @esp_indication: pointer to tDot11fIEESP_information
+ *
+ * The Estimated Service Parameters element is
+ * used by a AP to provide information to another STA which
+ * can then use the information as input to an algorithm to
+ * generate an estimate of throughput between the two STAs.
+ * The ESP Information List field contains from 1 to 4 ESP
+ * Information fields(each field 24 bits), each corresponding
+ * to an access category for which estimated service parameters
+ * information is provided.
+ *
+ * Return: None
+ */
+
+static void update_esp_data(struct sir_esp_information *esp_information,
+		tDot11fIEESP_information *esp_indication)
+{
+
+	uint8_t *data;
+	int i = 0;
+	int total_elements;
+	struct sir_esp_info *esp_info;
+
+	data = esp_indication->variable_data;
+	total_elements  = esp_indication->num_variable_data;
+	esp_information->is_present = esp_indication->present;
+	do_div(total_elements, ESP_INFORMATION_LIST_LENGTH);
+
+	if (total_elements > 4) {
+		pe_err("No of Air time fractions are greater than supported");
+		return;
+	}
+
+	for (i = 0; i < total_elements; i++) {
+		esp_info = (struct sir_esp_info *)data;
+		if (esp_info->access_category == ESP_AC_BK) {
+			qdf_mem_copy(&esp_information->esp_info_AC_BK,
+					data, 3);
+			data = data + ESP_INFORMATION_LIST_LENGTH;
+			continue;
+		}
+		if (esp_info->access_category == ESP_AC_BE) {
+			qdf_mem_copy(&esp_information->esp_info_AC_BE,
+					data, 3);
+			data = data + ESP_INFORMATION_LIST_LENGTH;
+			continue;
+		}
+		if (esp_info->access_category == ESP_AC_VI) {
+			qdf_mem_copy(&esp_information->esp_info_AC_VI,
+					data, 3);
+			data = data + ESP_INFORMATION_LIST_LENGTH;
+			continue;
+		}
+		if (esp_info->access_category == ESP_AC_VO) {
+			qdf_mem_copy(&esp_information->esp_info_AC_VO,
+					data, 3);
+			data = data + ESP_INFORMATION_LIST_LENGTH;
+			break;
+		}
+	}
+	return;
+}
+
 #ifdef WLAN_FEATURE_FILS_SK
 static void populate_dot11f_fils_rsn(tpAniSirGlobal mac_ctx,
 				     tDot11fIERSNOpaque *p_dot11f,
@@ -2296,6 +2345,7 @@ void populate_dot11f_fils_params(tpAniSirGlobal mac_ctx,
 			     fils_info->key_auth, fils_info->key_auth_len);
 	}
 }
+
 
 /**
  * update_fils_data: update fils params from beacon/probe response
@@ -2408,13 +2458,10 @@ tSirRetStatus sir_convert_probe_frame2_struct(tpAniSirGlobal pMac,
 	if (DOT11F_FAILED(status)) {
 		pe_err("Failed to parse a Probe Response (0x%08x, %d bytes):",
 			status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_ERROR,
+		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
 				   pFrame, nFrame);
 		qdf_mem_free(pr);
 		return eSIR_FAILURE;
-	} else if (DOT11F_WARNED(status)) {
-		pe_debug("There were warnings while unpacking a Probe Response (0x%08x, %d bytes):",
-			status, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fProbeResponse' to a 'tSirProbeRespBeacon'... */
 
@@ -2428,14 +2475,15 @@ tSirRetStatus sir_convert_probe_frame2_struct(tpAniSirGlobal pMac,
 	sir_copy_caps_info(pMac, pr->Capabilities, pProbeResp);
 
 	if (!pr->SSID.present) {
-		pe_warn("Mandatory IE SSID not present!");
+		pe_debug_rate_limited(30, "Mandatory IE SSID not present!");
 	} else {
 		pProbeResp->ssidPresent = 1;
 		convert_ssid(pMac, &pProbeResp->ssId, &pr->SSID);
 	}
 
 	if (!pr->SuppRates.present) {
-		pe_warn("Mandatory IE Supported Rates not present!");
+		pe_debug_rate_limited(30,
+				"Mandatory IE Supported Rates not present!");
 	} else {
 		pProbeResp->suppRatesPresent = 1;
 		convert_supp_rates(pMac, &pProbeResp->supportedRates,
@@ -2628,14 +2676,14 @@ tSirRetStatus sir_convert_probe_frame2_struct(tpAniSirGlobal pMac,
 	}
 	if (pr->MBO_IE.present) {
 		pProbeResp->MBO_IE_present = true;
-		pProbeResp->MBO_capability = pr->MBO_IE.mbo_cap[2];
+		if (pr->MBO_IE.cellular_data_cap.present)
+			pProbeResp->MBO_capability =
+				pr->MBO_IE.cellular_data_cap.cellular_connectivity;
 
-		if (pr->MBO_IE.num_assoc_disallowed &&
-			(pr->MBO_IE.assoc_disallowed[0] ==
-				 MBO_IE_ASSOC_DISALLOWED_SUBATTR_ID)) {
+		if (pr->MBO_IE.assoc_disallowed.present) {
 			pProbeResp->assoc_disallowed = true;
 			pProbeResp->assoc_disallowed_reason =
-				pr->MBO_IE.assoc_disallowed[2];
+				pr->MBO_IE.assoc_disallowed.reason_code;
 		}
 	}
 
@@ -3017,7 +3065,8 @@ sir_convert_assoc_resp_frame2_struct(tpAniSirGlobal pMac,
 
 	if (!ar->SuppRates.present) {
 		pAssocRsp->suppRatesPresent = 0;
-		pe_warn("Mandatory IE Supported Rates not present!");
+		pe_debug_rate_limited(30,
+				"Mandatory IE Supported Rates not present!");
 	} else {
 		pAssocRsp->suppRatesPresent = 1;
 		convert_supp_rates(pMac, &pAssocRsp->supportedRates,
@@ -3076,7 +3125,7 @@ sir_convert_assoc_resp_frame2_struct(tpAniSirGlobal pMac,
 				sizeof(tDot11fIEFTInfo));
 	}
 
-	if (ar->num_RICDataDesc <= 2) {
+	if (ar->num_RICDataDesc  && ar->num_RICDataDesc <= 2) {
 		for (cnt = 0; cnt < ar->num_RICDataDesc; cnt++) {
 			if (ar->RICDataDesc[cnt].present) {
 				qdf_mem_copy(&pAssocRsp->RICData[cnt],
@@ -3158,6 +3207,13 @@ sir_convert_assoc_resp_frame2_struct(tpAniSirGlobal pMac,
 				sizeof(tDot11fIEVHTOperation));
 		pe_debug("Received Assoc Response with Vendor specific VHT Oper");
 		lim_log_vht_operation(pMac, &pAssocRsp->VHTOperation);
+	}
+
+	if (ar->MBO_IE.present && ar->MBO_IE.rssi_assoc_rej.present) {
+		qdf_mem_copy(&pAssocRsp->rssi_assoc_rej,
+				&ar->MBO_IE.rssi_assoc_rej,
+				sizeof(tDot11fTLVrssi_assoc_rej));
+		pe_debug("Received Assoc Response with rssi based assoc rej");
 	}
 
 	fils_convert_assoc_rsp_frame2_struct(ar, pAssocRsp);
@@ -3373,7 +3429,7 @@ sir_beacon_ie_ese_bcn_report(tpAniSirGlobal pMac,
 	}
 	/* & "transliterate" from a 'tDot11fBeaconIEs' to a 'eseBcnReportMandatoryIe'... */
 	if (!pBies->SSID.present) {
-		pe_warn("Mandatory IE SSID not present!");
+		pe_debug_rate_limited(30, "Mandatory IE SSID not present!");
 	} else {
 		eseBcnReportMandatoryIe.ssidPresent = 1;
 		convert_ssid(pMac, &eseBcnReportMandatoryIe.ssId, &pBies->SSID);
@@ -3382,7 +3438,8 @@ sir_beacon_ie_ese_bcn_report(tpAniSirGlobal pMac,
 	}
 
 	if (!pBies->SuppRates.present) {
-		pe_warn("Mandatory IE Supported Rates not present!");
+		pe_debug_rate_limited(30,
+				"Mandatory IE Supported Rates not present!");
 	} else {
 		eseBcnReportMandatoryIe.suppRatesPresent = 1;
 		convert_supp_rates(pMac, &eseBcnReportMandatoryIe.supportedRates,
@@ -3677,14 +3734,15 @@ sir_parse_beacon_ie(tpAniSirGlobal pMac,
 	}
 	/* & "transliterate" from a 'tDot11fBeaconIEs' to a 'tSirProbeRespBeacon'... */
 	if (!pBies->SSID.present) {
-		pe_warn("Mandatory IE SSID not present!");
+		pe_debug_rate_limited(30, "Mandatory IE SSID not present!");
 	} else {
 		pBeaconStruct->ssidPresent = 1;
 		convert_ssid(pMac, &pBeaconStruct->ssId, &pBies->SSID);
 	}
 
 	if (!pBies->SuppRates.present) {
-		pe_warn("Mandatory IE Supported Rates not present!");
+		pe_debug_rate_limited(30,
+				"Mandatory IE Supported Rates not present!");
 	} else {
 		pBeaconStruct->suppRatesPresent = 1;
 		convert_supp_rates(pMac, &pBeaconStruct->supportedRates,
@@ -3897,14 +3955,14 @@ sir_parse_beacon_ie(tpAniSirGlobal pMac,
 
 	if (pBies->MBO_IE.present) {
 		pBeaconStruct->MBO_IE_present = true;
-		pBeaconStruct->MBO_capability = pBies->MBO_IE.mbo_cap[2];
+		if (pBies->MBO_IE.cellular_data_cap.present)
+			pBeaconStruct->MBO_capability =
+				pBies->MBO_IE.cellular_data_cap.cellular_connectivity;
 
-		if (pBies->MBO_IE.num_assoc_disallowed &&
-			(pBies->MBO_IE.assoc_disallowed[0] ==
-				 MBO_IE_ASSOC_DISALLOWED_SUBATTR_ID)) {
+		if (pBies->MBO_IE.assoc_disallowed.present) {
 			pBeaconStruct->assoc_disallowed = true;
 			pBeaconStruct->assoc_disallowed_reason =
-				pBies->MBO_IE.assoc_disallowed[2];
+				pBies->MBO_IE.assoc_disallowed.reason_code;
 		}
 	}
 
@@ -3949,6 +4007,24 @@ sir_convert_fils_data_to_beacon_struct(tpSirProbeRespBeacon beacon_struct,
 }
 #endif
 
+/**
+ * sir_convert_esp_data_to_beacon_struct: update ESP params from beacon
+ * @beacon_struct: pointer to tpSirProbeRespBeacon
+ * @beacon: pointer to tDot11fBeacon
+ *
+ * Return: None
+ */
+static void
+sir_convert_esp_data_to_beacon_struct(tpSirProbeRespBeacon beacon_struct,
+					tDot11fBeacon *beacon)
+{
+	if (!beacon->ESP_information.present)
+		return;
+
+	update_esp_data(&beacon_struct->esp_information,
+			&beacon->ESP_information);
+}
+
 tSirRetStatus
 sir_convert_beacon_frame2_struct(tpAniSirGlobal pMac,
 				 uint8_t *pFrame,
@@ -3984,13 +4060,10 @@ sir_convert_beacon_frame2_struct(tpAniSirGlobal pMac,
 	if (DOT11F_FAILED(status)) {
 		pe_err("Failed to parse Beacon IEs (0x%08x, %d bytes):",
 			status, nPayload);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_ERROR,
+		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
 				   pPayload, nPayload);
 		qdf_mem_free(pBeacon);
 		return eSIR_FAILURE;
-	} else if (DOT11F_WARNED(status)) {
-		pe_debug("There were warnings while unpacking Beacon IEs (0x%08x, %d bytes):",
-			status, nPayload);
 	}
 	/* & "transliterate" from a 'tDot11fBeacon' to a 'tSirProbeRespBeacon'... */
 	/* Timestamp */
@@ -4028,14 +4101,15 @@ sir_convert_beacon_frame2_struct(tpAniSirGlobal pMac,
 		pBeacon->Capabilities.immediateBA;
 
 	if (!pBeacon->SSID.present) {
-		pe_warn("Mandatory IE SSID not present!");
+		pe_debug_rate_limited(30, "Mandatory IE SSID not present!");
 	} else {
 		pBeaconStruct->ssidPresent = 1;
 		convert_ssid(pMac, &pBeaconStruct->ssId, &pBeacon->SSID);
 	}
 
 	if (!pBeacon->SuppRates.present) {
-		pe_warn("Mandatory IE Supported Rates not present!");
+		pe_debug_rate_limited(30,
+				"Mandatory IE Supported Rates not present!");
 	} else {
 		pBeaconStruct->suppRatesPresent = 1;
 		convert_supp_rates(pMac, &pBeaconStruct->supportedRates,
@@ -4279,14 +4353,14 @@ sir_convert_beacon_frame2_struct(tpAniSirGlobal pMac,
 	}
 	if (pBeacon->MBO_IE.present) {
 		pBeaconStruct->MBO_IE_present = true;
-		pBeaconStruct->MBO_capability = pBeacon->MBO_IE.mbo_cap[2];
+		if (pBeacon->MBO_IE.cellular_data_cap.present)
+			pBeaconStruct->MBO_capability =
+				pBeacon->MBO_IE.cellular_data_cap.cellular_connectivity;
 
-		if (pBeacon->MBO_IE.num_assoc_disallowed &&
-			(pBeacon->MBO_IE.assoc_disallowed[0] ==
-				 MBO_IE_ASSOC_DISALLOWED_SUBATTR_ID)) {
+		if (pBeacon->MBO_IE.assoc_disallowed.present) {
 			pBeaconStruct->assoc_disallowed = true;
 			pBeaconStruct->assoc_disallowed_reason =
-				pBeacon->MBO_IE.assoc_disallowed[2];
+				pBeacon->MBO_IE.assoc_disallowed.reason_code;
 		}
 	}
 
@@ -4301,6 +4375,7 @@ sir_convert_beacon_frame2_struct(tpAniSirGlobal pMac,
 		}
 	}
 
+	sir_convert_esp_data_to_beacon_struct(pBeaconStruct, pBeacon);
 	sir_convert_fils_data_to_beacon_struct(pBeaconStruct, pBeacon);
 	qdf_mem_free(pBeacon);
 	return eSIR_SUCCESS;

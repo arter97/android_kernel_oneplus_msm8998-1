@@ -72,7 +72,7 @@ extern "C" {
 #define       QDF_MAX_NO_OF_SAP_MODE       2    /* max # of SAP */
 #define       SAP_MAX_NUM_SESSION          5
 #define       SAP_MAX_OBSS_STA_CNT         1    /* max # of OBSS STA */
-#define       SAP_ACS_WEIGHT_MAX           (4444)
+#define       SAP_ACS_WEIGHT_MAX           (26664)
 
 /*--------------------------------------------------------------------------
  * reasonCode taken from 802.11 standard.
@@ -201,12 +201,6 @@ typedef enum {
 	eSAP_USR_INITATED_DISASSOC
 } eSapDisassocReason;
 
-/*Handle bool over here*/
-typedef enum {
-	eSAP_FALSE,
-	eSAP_TRUE,
-} eSapBool;
-
 typedef enum {
 	eSAP_DFS_NOL_CLEAR,
 	eSAP_DFS_NOL_RANDOMIZE,
@@ -284,7 +278,18 @@ typedef struct sap_StationAssocReassocCompleteEvent_s {
 	uint8_t *assocRespPtr;
 	uint8_t timingMeasCap;
 	tSirSmeChanInfo chan_info;
-	uint8_t      ecsa_capable;
+	uint8_t ecsa_capable;
+	bool ampdu;
+	bool sgi_enable;
+	bool tx_stbc;
+	bool rx_stbc;
+	tSirMacHTChannelWidth ch_width;
+	enum sir_sme_phy_mode mode;
+	uint8_t max_supp_idx;
+	uint8_t max_ext_idx;
+	uint8_t max_mcs_idx;
+	uint8_t rx_mcs_map;
+	uint8_t tx_mcs_map;
 } tSap_StationAssocReassocCompleteEvent;
 
 typedef struct sap_StationDisassocCompleteEvent_s {
@@ -305,7 +310,7 @@ typedef struct sap_StationMICFailureEvent_s {
 	struct qdf_mac_addr srcMacAddr;    /* address used to compute MIC */
 	struct qdf_mac_addr staMac;        /* taMacAddr transmitter address */
 	struct qdf_mac_addr dstMacAddr;
-	eSapBool multicast;
+	bool   multicast;
 	uint8_t IV1;            /* first byte of IV */
 	uint8_t keyId;          /* second byte of IV */
 	uint8_t TSC[SIR_CIPHER_SEQ_CTR_SIZE];           /* sequence number */
@@ -586,6 +591,7 @@ typedef struct sap_Config {
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
 	uint8_t cc_switch_mode;
 #endif
+	uint32_t auto_channel_select_weight;
 	struct sap_acs_cfg acs_cfg;
 	uint16_t probeRespIEsBufferLen;
 	/* buffer for addn ies comes from hostapd */
@@ -967,6 +973,16 @@ QDF_STATUS wlansap_set_dfs_preferred_channel_location(tHalHandle hHal,
 		uint8_t dfs_Preferred_Channels_location);
 QDF_STATUS wlansap_set_dfs_target_chnl(tHalHandle hHal,
 			uint8_t target_channel);
+
+/**
+ * wlan_sap_get_phymode() - Returns sap phymode.
+ * @ctx:	Pointer to cds Context or Sap Context.
+ *
+ * This function provides the SAP current phymode.
+ *
+ * Return: phymode
+ */
+eCsrPhyMode wlan_sap_get_phymode(void *ctx);
 uint32_t wlan_sap_get_vht_ch_width(void *ctx);
 void wlan_sap_set_vht_ch_width(void *ctx, uint32_t vht_channel_width);
 QDF_STATUS wlansap_update_sap_config_add_ie(tsap_Config_t *pConfig,
@@ -998,6 +1014,17 @@ QDF_STATUS wlansap_set_tx_leakage_threshold(tHalHandle hal,
 
 QDF_STATUS wlansap_set_invalid_session(void *cds_ctx);
 QDF_STATUS sap_roam_session_close_callback(void *pContext);
+
+/**
+ * wlansap_cleanup_cac_timer() - Force cleanup DFS CAC timer
+ * @sap_ctx: sap context
+ *
+ * Force cleanup DFS CAC timer when reset all adapters. It will not
+ * check concurrency SAP since just called when reset all adapters.
+ *
+ * Return: None
+ */
+void wlansap_cleanup_cac_timer(void *sap_ctx);
 
 #ifdef __cplusplus
 }

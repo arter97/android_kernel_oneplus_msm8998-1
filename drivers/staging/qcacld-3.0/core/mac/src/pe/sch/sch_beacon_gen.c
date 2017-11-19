@@ -282,11 +282,19 @@ sch_set_fixed_beacon_fields(tpAniSirGlobal mac_ctx, tpPESession session)
 		populate_dot_11_f_ext_chann_switch_ann(mac_ctx,
 				&bcn_2->ext_chan_switch_ann,
 				session);
-		pe_info("ecsa: mode:%d reg:%d chan:%d count:%d",
+		pe_debug("ecsa: mode:%d reg:%d chan:%d count:%d",
 			bcn_2->ext_chan_switch_ann.switch_mode,
 			bcn_2->ext_chan_switch_ann.new_reg_class,
 			bcn_2->ext_chan_switch_ann.new_channel,
 			bcn_2->ext_chan_switch_ann.switch_count);
+	    } else {
+		populate_dot11f_chan_switch_ann(mac_ctx,
+						&bcn_2->ChanSwitchAnn,
+						session);
+		pe_info("csa: mode:%d chan:%d count:%d",
+			bcn_2->ChanSwitchAnn.switchMode,
+			bcn_2->ChanSwitchAnn.newChannel,
+			bcn_2->ChanSwitchAnn.switchCount);
 	    }
 	}
 
@@ -310,11 +318,10 @@ sch_set_fixed_beacon_fields(tpAniSirGlobal mac_ctx, tpPESession session)
 			 * and SAP has instructed to announce channel switch IEs
 			 * in beacon and probe responses
 			 */
-			 if (!CHAN_HOP_ALL_BANDS_ENABLE ||
-			     session->lim_non_ecsa_cap_num > 0) {
+			 if (!CHAN_HOP_ALL_BANDS_ENABLE) {
 				populate_dot11f_chan_switch_ann(mac_ctx,
 						&bcn_2->ChanSwitchAnn, session);
-				pe_info("csa: mode:%d chan:%d count:%d",
+				pe_debug("csa: mode:%d chan:%d count:%d",
 					bcn_2->ChanSwitchAnn.switchMode,
 					bcn_2->ChanSwitchAnn.newChannel,
 					bcn_2->ChanSwitchAnn.switchCount);
@@ -432,7 +439,7 @@ sch_set_fixed_beacon_fields(tpAniSirGlobal mac_ctx, tpPESession session)
 		}
 	}
 
-	if ((LIM_IS_AP_ROLE(session))) {
+	if (LIM_IS_AP_ROLE(session)) {
 		/*
 		 * Can be efficiently updated whenever new IE added  in Probe
 		 * response in future

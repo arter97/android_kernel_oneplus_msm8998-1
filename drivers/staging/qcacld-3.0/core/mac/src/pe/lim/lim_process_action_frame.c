@@ -981,8 +981,7 @@ static void __lim_process_del_ts_req(tpAniSirGlobal mac_ctx,
 	tsinfo = delts.wmeTspecPresent ? &delts.tspec.tsinfo : &delts.tsinfo;
 
 	/* if no Admit Control, ignore the request */
-	if ((tsinfo->traffic.accessPolicy == SIR_MAC_ACCESSPOLICY_EDCA)) {
-
+	if (tsinfo->traffic.accessPolicy == SIR_MAC_ACCESSPOLICY_EDCA) {
 		if (upToAc(tsinfo->traffic.userPrio) >= MAX_NUM_AC) {
 			pe_warn("DelTs with UP: %d has no AC - ignoring req",
 				tsinfo->traffic.userPrio);
@@ -1540,7 +1539,7 @@ static void __lim_process_sa_query_response_action_frame(tpAniSirGlobal pMac,
 	if (NULL == pSta)
 		return;
 
-	pe_info("SA Query Response source addr:  %0x:%0x:%0x:%0x:%0x:%0x",
+	pe_debug("SA Query Response source addr:  %0x:%0x:%0x:%0x:%0x:%0x",
 		pHdr->sa[0], pHdr->sa[1], pHdr->sa[2], pHdr->sa[3],
 		pHdr->sa[4], pHdr->sa[5]);
 	pe_debug("SA Query state for station: %d", pSta->pmfSaQueryState);

@@ -225,6 +225,29 @@ const TLV_OPERATING_CHANNEL                  =  17;
 const TLV_INVITATION_FLAGS                   =  18;
 const TLV_P2P_VENDOR_SPECIFIC                = 221;
 
+
+/////////////////////////////////////////////////////////////////////////////
+//                  MBO-OCE Attributes (0, 151-255: Reserved)              //
+/////////////////////////////////////////////////////////////////////////////
+const TLV_MBO_AP_CAP_ATTR                    =   1;
+const TLV_NON_PREFERRED_CHAN_REPORT_ATTR     =   2;
+const TLV_CELLULAR_DATA_CAP_ATTR             =   3;
+const TLV_ASSOC_DISSALLOWED_ATTR             =   4;
+const TLV_CELLULAR_DATA_CON_PREF_ATTR        =   5;
+const TLV_TRANSITION_REASON_CODE_ATTR        =   6;
+const TLV_TRANSITION_REJECT_REASON_CODE_ATTR =   7;
+const TLV_ASSOC_RETRY_DELAY_ATTR             =   8;
+
+// 9-100 : Reserved for MBO //
+
+// OCE ATTRIBUTES //
+const TLV_OCE_CAP_IND_ATTR                   =   101;
+const TLV_RSSI_ASSOC_REJ_ATTR                =   102;
+const TLV_REDUCED_WAN_METRICS_ATTR           =   103;
+// 104-150 : Reserved for OCE
+
+
+
 /////////////////////////////////////////////////////////////////////////////
 // Fixed Fields
 
@@ -1032,6 +1055,76 @@ TLV OperatingChannel ( TLV_OPERATING_CHANNEL ) ( 1 : 2 ) LSB
     channel,         1;
 }
 
+///////////////////////////////////////////////////////////////////////////
+//                       MBO-OCE ATTR TLVs                            //
+///////////////////////////////////////////////////////////////////////////
+
+TLV mbo_ap_cap ( TLV_MBO_AP_CAP_ATTR ) ( 1 : 1 ) LSB
+{
+    mbo_cap_ind, 1;
+}
+
+TLV non_prefferd_chan_rep ( TLV_NON_PREFERRED_CHAN_REPORT_ATTR ) ( 1 : 1 ) LSB
+{
+    oper_class, 1;
+    channel_report[3..254];
+}
+
+TLV cellular_data_cap ( TLV_CELLULAR_DATA_CAP_ATTR ) ( 1 : 1 ) LSB
+{
+    cellular_connectivity, 1;
+}
+
+TLV assoc_disallowed ( TLV_ASSOC_DISSALLOWED_ATTR ) ( 1 : 1 ) LSB
+{
+    reason_code, 1;
+}
+
+TLV cellular_data_con_pref ( TLV_CELLULAR_DATA_CON_PREF_ATTR ) ( 1 : 1 ) LSB
+{
+    cellular_preference, 1;
+}
+
+TLV transition_reason ( TLV_TRANSITION_REASON_CODE_ATTR ) ( 1 : 1 ) LSB
+{
+    transition_reason_code, 1;
+}
+
+TLV transition_reject_reason ( TLV_TRANSITION_REJECT_REASON_CODE_ATTR ) ( 1 : 1 ) LSB
+{
+    transition_reject_code, 1;
+}
+
+TLV assoc_retry_delay ( TLV_ASSOC_RETRY_DELAY_ATTR ) ( 1 : 1 ) LSB
+{
+    delay, 2;
+}
+
+// OCE Attributes //
+
+TLV oce_cap ( TLV_OCE_CAP_IND_ATTR ) ( 1 : 1 ) LSB
+{
+    {
+     oce_release: 3;
+     is_sta_cfon : 1;
+     non_oce_ap_present : 1;
+     reserved: 3;
+    }
+}
+
+TLV rssi_assoc_rej ( TLV_RSSI_ASSOC_REJ_ATTR ) ( 1 : 1 ) LSB
+{
+    delta_rssi, 1;
+    retry_delay, 1;
+}
+
+TLV reduced_wan_metrics ( TLV_REDUCED_WAN_METRICS_ATTR ) ( 1 : 1 ) LSB
+{
+    {
+     downlink_av_cap: 4;
+     uplink_av_cap : 4;
+    }
+}
 
 /**
  * \brief Vendor Extension
@@ -1300,12 +1393,12 @@ IE RSN (EID_RSN)                          // 7.3.2.25
     // I don't see anything in the Standard limiting the number of Pairwise
     // Cypher Suites, other than the maximum length of an IE, which limits us
     // to 61.  However, that seems needlessly wasteful of space.
-    pwise_cipher_suites[4][0..4] COUNTIS pwise_cipher_suite_count;
+    pwise_cipher_suites[4][0..6] COUNTIS pwise_cipher_suite_count;
     // Optional count of AKM suite selectors
     OPTIONAL akm_suite_count, 2;
     // Again, I see nothing in the Standard explicitly limiting the number of
     // AKM suite selectors other than the maximum size of an IE.
-    akm_suites[4][0..4] COUNTIS akm_suite_count;
+    akm_suites[4][0..6] COUNTIS akm_suite_count;
     OPTIONAL RSN_Cap[2];
     // Finally, the IE may contain zero or more PMKIDs:
     OPTIONAL pmkid_count, 2;
@@ -2452,15 +2545,14 @@ IE TimeAdvertisement (EID_TIME_ADVERTISEMENT)   // 8.4.2.63
     time_error[5];
 }
 
-IE MBO_IE (EID_VENDOR_SPECIFIC) OUI ( 0x50, 0x6F, 0x9A, 0x16 )
-{
-    mbo_cap[3];
-    assoc_disallowed[0..3];
-}
-
 IE QCN_IE (EID_VENDOR_SPECIFIC) OUI ( 0x8C, 0xFD, 0xF0, 0x01 )
 {
     version[4];
+}
+
+IE ESP_information (EID_EXTN_ID_ELEMENT) OUI ( 0x0B )
+{
+    variable_data[0..96];
 }
 
 IE fils_indication (EID_FILS_INDICATION)
@@ -2999,6 +3091,21 @@ MULTIIE P2PDisAssoc ( EID_VENDOR_SPECIFIC ) OUI( 0x50, 0x6F, 0x9A, 0x09 )
    MANDATORYTLV MinorReasonCode;
 }
 
+MULTIIE MBO_IE (EID_VENDOR_SPECIFIC) OUI ( 0x50, 0x6F, 0x9A, 0x16 )
+{
+   OPTIONALTLV mbo_ap_cap;
+   OPTIONALTLV non_prefferd_chan_rep;
+   OPTIONALTLV cellular_data_cap ;
+   OPTIONALTLV assoc_disallowed;
+   OPTIONALTLV cellular_data_con_pref;
+   OPTIONALTLV transition_reason;
+   OPTIONALTLV transition_reject_reason;
+   OPTIONALTLV assoc_retry_delay;
+   OPTIONALTLV oce_cap;
+   OPTIONALTLV rssi_assoc_rej;
+   OPTIONALTLV reduced_wan_metrics;
+}
+
 IE vendor_vht_ie (EID_VENDOR_SPECIFIC) OUI (0x00, 0x90, 0x4c, 0x04, 0x08)
 {
    OPTIE IE VHTCaps;
@@ -3069,6 +3176,7 @@ FRAME Beacon                              // C.f. Sec. 7.2.3.1
     OPTIE  ESEVersion;
     OPTIE  MBO_IE;
     OPTIE  QCN_IE;
+    OPTIE  ESP_information;
 } // End frame Beacon.
 
 // Ok, here's  the story on  Beacon1 & Beacon2.   We presumably beacon  a lot
@@ -3159,6 +3267,7 @@ FRAME Beacon2
     OPTIE  QComVendorIE;
     OPTIE  ESEVersion;
     OPTIE  QCN_IE;
+    OPTIE  ESP_information;
 }
 
 // This frame is just Beacon with its Fixed Fields stripped out.  It's handy
@@ -3226,6 +3335,7 @@ FRAME BeaconIEs
     OPTIE  QComVendorIE;
     OPTIE  MBO_IE;
     OPTIE  QCN_IE;
+    OPTIE  ESP_information;
 } // End frame BeaconIEs.
 
 FRAME Disassociation                      // 7.3.3.3
@@ -3313,6 +3423,7 @@ FRAME AssocResponse                       // 7.2.3.5
     OPTIE  fragment_ie;
     OPTIE  fils_kde;
     OPTIE  vendor_vht_ie;
+    OPTIE  MBO_IE;
     OPTIE  QCN_IE;
 } // End frame AssocResponse.
 
@@ -3387,6 +3498,7 @@ FRAME ReAssocResponse                     // 7.2.3.7
     OPTIE  OBSSScanParameters;
     OPTIE  QosMapSet;
     OPTIE  vendor_vht_ie;
+    OPTIE  MBO_IE;
 } // End frame ReAssocResponse.
 
 FRAME ProbeRequest                        // 7.2.3.8
@@ -3463,6 +3575,7 @@ FRAME ProbeResponse                       // 7.2.3.9
     OPTIE  ESEVersion;
     OPTIE  MBO_IE;
     OPTIE  QCN_IE;
+    OPTIE  ESP_information;
 } // End frame ProbeResponse.
 
 FRAME Authentication                      // 7.2.3.10

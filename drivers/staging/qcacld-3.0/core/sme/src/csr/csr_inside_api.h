@@ -98,9 +98,9 @@
 
 /* ***************************************************************************
  * The MAX BSSID Count should be lower than the command timeout value and it
- * can be of a fraction of 3/4 of the total command timeout value.
+ * can be of a fraction of 3/4 to 1/2 of the total command timeout value.
  * ***************************************************************************/
-#define CSR_MAX_BSSID_COUNT     ((SME_ACTIVE_LIST_CMD_TIMEOUT_VALUE/4000) * 3)
+#define CSR_MAX_BSSID_COUNT     (SME_ACTIVE_LIST_CMD_TIMEOUT_VALUE/2000)
 #define CSR_CUSTOM_CONC_GO_BI    100
 extern uint8_t csr_wpa_oui[][CSR_WPA_OUI_SIZE];
 bool csr_is_supported_channel(tpAniSirGlobal pMac, uint8_t channelId);
@@ -109,37 +109,44 @@ bool csr_is_supported_channel(tpAniSirGlobal pMac, uint8_t channelId);
 #define BEST_CANDIDATE_RSSI_WEIGHT 50
 #define MIN_RSSI (-100)
 #define MAX_RSSI 0
-#define BEST_CANDIDATE_AP_COUNT_WEIGHT 50
-#define BEST_CANDIDATE_MAX_COUNT 30
-#define BEST_CANDIDATE_MIN_COUNT 0
 #define ROAM_MAX_CHANNEL_WEIGHT 100
-#define DEFAULT_CHANNEL_UTILIZATION 50
 #define MAX_CHANNEL_UTILIZATION 100
+#define NSS_1X1_WEIGHTAGE 3
+#define MAX_ESTIMATED_AIR_TIME_FRACTION 255
+#define MAX_AP_LOAD 255
+
+#define LOW_CHANNEL_CONGESTION_WEIGHT 500
+#define MODERATE_CHANNEL_CONGESTION_WEIGHT 370
+#define CONSIDERABLE_CHANNEL_CONGESTION_WEIGHT 250
+#define HIGH_CHANNEL_CONGESTION_WEIGHT 120
+
+#define LOW_CHANNEL_CONGESTION 0
+#define MODERATE_CHANNEL_CONGESTION 25
+#define CONSIDERABLE_CHANNEL_CONGESTION 50
+#define HIGH_CHANNEL_CONGESTION 75
+#define EXTREME_CHANNEL_CONGESTION 100
 
 #define RSSI_WEIGHTAGE 25
 #define HT_CAPABILITY_WEIGHTAGE 7
 #define VHT_CAP_WEIGHTAGE 5
-#define BEAMFORMING_CAP_WEIGHTAGE 2
 #define CHAN_WIDTH_WEIGHTAGE 10
 #define CHAN_BAND_WEIGHTAGE 5
-#define WMM_WEIGHTAGE 0
-#define CCA_WEIGHTAGE 8
-#define OTHER_AP_WEIGHT 28
+#define NSS_WEIGHTAGE 5
+#define BEAMFORMING_CAP_WEIGHTAGE 2
 #define PCL_WEIGHT 10
+#define CHANNEL_CONGESTION_WEIGHTAGE 5
+#define RESERVED_WEIGHT 31
 
-#define MAX_AP_LOAD 255
-#define BEST_CANDIDATE_EXCELLENT_RSSI -40
-#define BEST_CANDIDATE_GOOD_RSSI -55
-#define BEST_CANDIDATE_POOR_RSSI -65
+#define EXCELLENT_RSSI -55
 #define BAD_RSSI  -80
-#define BEST_CANDIDATE_EXCELLENT_RSSI_WEIGHT 100
-#define BEST_CANDIDATE_GOOD_RSSI_WEIGHT 80
-#define BEST_CANDIDATE_BAD_RSSI_WEIGHT 60
+#define EXCELLENT_RSSI_WEIGHT 100
+#define RSSI_BUCKET 5
+#define RSSI_WEIGHT_BUCKET 250
+
 #define BEST_CANDIDATE_MAX_WEIGHT 100
 #define BEST_CANDIDATE_80MHZ 100
 #define BEST_CANDIDATE_40MHZ 70
 #define BEST_CANDIDATE_20MHZ 30
-#define BEST_CANDIDATE_PENALTY (3/10)
 #define BEST_CANDIDATE_MAX_BSS_SCORE 10000
 
 
@@ -258,6 +265,7 @@ struct csr_scan_for_ssid_context {
 #define CSR_IS_DISCONNECT_COMMAND(pCommand) ((eSmeCommandRoam == \
 		(pCommand)->command) && \
 		((eCsrForcedDisassoc == (pCommand)->u.roamCmd.roamReason) || \
+		(eCsrForcedIbssLeave == (pCommand)->u.roamCmd.roamReason) ||\
 		(eCsrForcedDeauth == (pCommand)->u.roamCmd.roamReason) || \
 					(eCsrSmeIssuedDisassocForHandoff == \
 					(pCommand)->u.roamCmd.roamReason) || \
@@ -562,9 +570,31 @@ QDF_STATUS csr_roam_open_session(tpAniSirGlobal pMac,
 				void *pContext,
 				 uint8_t *pSelfMacAddr, uint8_t *pbSessionId,
 				 uint32_t type, uint32_t subType);
-/* fSync: true means cleanupneeds to handle synchronously. */
+
+/**
+ * csr_purge_sme_cmd_list() - perge all sme cmds.
+ * @mac_ctx: mac context
+ * @sessionid: session id of the session
+ * @flush_all_sme_cmd: If all sme cmds needed to be flushed
+ *
+ * Return: void
+ */
+void csr_purge_sme_cmd_list(tpAniSirGlobal mac_ctx, uint8_t sessionid,
+				bool flush_all_cmd);
+
+/**
+ * csr_roam_close_session: API to close csr session
+ * @pMac: mac context
+ * @sessionId: session id
+ * @fSync: whether cleanupneeds to handle synchronously
+ * @flush_all_sme_cmds: whether all commands needs to be flushed
+ * @callback: pointer to callback API
+ * @pContext: callback context
+ *
+ * Return: None
+ */
 QDF_STATUS csr_roam_close_session(tpAniSirGlobal pMac, uint32_t sessionId,
-				  bool fSync,
+				  bool fSync, bool flush_all_sme_cmds,
 				  csr_roamSessionCloseCallback callback,
 				  void *pContext);
 void csr_cleanup_session(tpAniSirGlobal pMac, uint32_t sessionId);
@@ -776,6 +806,8 @@ void csr_get_vdev_type_nss(tpAniSirGlobal mac_ctx,
 #define ENC_MODE_WEP104 2
 #define ENC_MODE_TKIP   3
 #define ENC_MODE_AES    4
+#define ENC_MODE_AES_GCMP    5
+#define ENC_MODE_AES_GCMP_256    6
 #ifdef FEATURE_WLAN_WAPI
 #define ENC_MODE_SMS4   5       /* WAPI */
 #endif /* FEATURE_WLAN_WAPI */
@@ -1187,7 +1219,6 @@ bool csr_elected_country_info(tpAniSirGlobal pMac);
 void csr_add_vote_for_country_info(tpAniSirGlobal pMac, uint8_t *pCountryCode);
 void csr_clear_votes_for_country_info(tpAniSirGlobal pMac);
 
-#endif
 QDF_STATUS csr_send_ext_change_channel(tpAniSirGlobal mac_ctx,
 				uint32_t channel, uint8_t session_id);
 
@@ -1229,3 +1260,14 @@ QDF_STATUS csr_roam_set_bss_config_cfg(tpAniSirGlobal mac_ctx,
 		bool reset_country);
 void csr_prune_channel_list_for_mode(tpAniSirGlobal pMac,
 				     tCsrChannel *pChannelList);
+
+#ifdef WLAN_FEATURE_11W
+bool csr_is_mfpc_capable(struct sDot11fIERSN *rsn);
+#else
+static inline bool csr_is_mfpc_capable(struct sDot11fIERSN *rsn)
+{
+	return false;
+}
+#endif
+
+#endif /* CSR_INSIDE_API_H__ */

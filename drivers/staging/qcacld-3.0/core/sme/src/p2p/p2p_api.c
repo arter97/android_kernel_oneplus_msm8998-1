@@ -102,6 +102,11 @@ QDF_STATUS sme_remain_on_chn_rsp(tpAniSirGlobal pMac, uint8_t *pMsg)
 	remainOnChanCallback callback = NULL;
 	struct sir_roc_rsp *rsp = (struct sir_roc_rsp *)pMsg;
 
+	if (rsp == NULL) {
+		sme_err("Channel rsp is NULL");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
 	csr_get_active_scan_entry(pMac, rsp->scan_id, &pEntry);
 	if (!pEntry) {
 		sme_err("No cmd found in active list");
@@ -113,9 +118,12 @@ QDF_STATUS sme_remain_on_chn_rsp(tpAniSirGlobal pMac, uint8_t *pMsg)
 		return status;
 
 	callback = pCommand->u.remainChlCmd.callback;
-	if (callback)
+	if (callback) {
+		if(rsp->status != eSIR_SME_SUCCESS)
+			status = QDF_STATUS_E_FAILURE;
 		callback(pMac, pCommand->u.remainChlCmd.callbackCtx,
-			rsp->status, rsp->scan_id);
+			status, rsp->scan_id);
+	}
 
 	fFound = csr_ll_remove_entry(&pMac->sme.smeScanCmdActiveList, pEntry,
 				     LL_ACCESS_LOCK);

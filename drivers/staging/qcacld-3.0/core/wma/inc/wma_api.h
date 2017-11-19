@@ -52,6 +52,7 @@ typedef void *WMA_HANDLE;
  * @GEN_PARAM_CAPTURE_TSF: read tsf
  * @GEN_PARAM_RESET_TSF_GPIO: reset tsf gpio
  * @GEN_VDEV_ROAM_SYNCH_DELAY: roam sync delay
+ * @GEN_PARAM_LISTEN_INTERVAL: listen interval
  */
 enum GEN_PARAM {
 	GEN_VDEV_PARAM_AMPDU = 0x1,
@@ -61,6 +62,7 @@ enum GEN_PARAM {
 	GEN_PARAM_CAPTURE_TSF,
 	GEN_PARAM_RESET_TSF_GPIO,
 	GEN_VDEV_ROAM_SYNCH_DELAY,
+	GEN_PARAM_LISTEN_INTERVAL
 };
 
 /**
@@ -184,10 +186,12 @@ void wma_handle_initial_wake_up(void);
 int wma_bus_resume(void);
 QDF_STATUS wma_resume_target(WMA_HANDLE handle);
 QDF_STATUS wma_disable_wow_in_fw(WMA_HANDLE handle);
+void wma_set_d0wow_flag(WMA_HANDLE handle, bool flag);
+bool wma_read_d0wow_flag(WMA_HANDLE handle);
 QDF_STATUS wma_disable_d0wow_in_fw(WMA_HANDLE handle);
+QDF_STATUS wma_enable_d0wow_in_fw(WMA_HANDLE handle);
 bool wma_is_wow_mode_selected(WMA_HANDLE handle);
 QDF_STATUS wma_enable_wow_in_fw(WMA_HANDLE handle, uint32_t wow_flags);
-QDF_STATUS wma_enable_d0wow_in_fw(WMA_HANDLE handle, uint32_t wow_flags);
 void wma_set_peer_authorized_cb(void *wma_ctx, wma_peer_authorized_fp auth_cb);
 QDF_STATUS wma_set_peer_param(void *wma_ctx, uint8_t *peer_addr,
 		  uint32_t param_id,
@@ -414,6 +418,19 @@ void wma_peer_debug_log(uint8_t vdev_id, uint8_t op,
 			uint16_t peer_id, void *mac_addr,
 			void *peer_obj, uint32_t val1, uint32_t val2);
 void wma_peer_debug_dump(void);
+
+/**
+ * wma_set_vc_mode_config() - set voltage corner mode config to FW.
+ * @wma_handle:	pointer to wma handle.
+ * @vc_bitmap:	value needs to set to firmware.
+ *
+ * At the time of driver startup, set operating voltage corner mode
+ * for differenet phymode and bw configurations.
+ *
+ * Return: QDF_STATUS.
+ */
+QDF_STATUS wma_set_vc_mode_config(void *wma_handle,
+		uint32_t vc_bitmap);
 
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS
 /**

@@ -358,6 +358,46 @@ QDF_STATUS wmi_unified_resume_send(void *wmi_hdl,
 	return QDF_STATUS_E_FAILURE;
 }
 
+#ifdef FEATURE_WLAN_D0WOW
+/**
+ *  wmi_d0wow_enable_send() - WMI d0 wow enable function
+ *  @param wmi_handle: handle to WMI.
+ *  @mac_id: radio context
+ *
+ *  Return: QDF_STATUS_SUCCESS on success and QDF_STATUS_E_FAILURE for failure
+ */
+QDF_STATUS wmi_d0wow_enable_send(void *wmi_hdl,
+				uint8_t mac_id)
+{
+	wmi_unified_t wmi_handle = (wmi_unified_t) wmi_hdl;
+
+	if (wmi_handle->ops->send_d0wow_enable_cmd)
+		return wmi_handle->ops->send_d0wow_enable_cmd(
+					wmi_handle, mac_id);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+/**
+ *  wmi_d0wow_disable_send() - WMI d0 wow disable function
+ *  @param wmi_handle: handle to WMI.
+ *  @mac_id: radio context
+ *
+ *  Return: QDF_STATUS_SUCCESS on success and QDF_STATUS_E_FAILURE for failure
+ */
+QDF_STATUS wmi_d0wow_disable_send(void *wmi_hdl,
+				uint8_t mac_id)
+{
+	wmi_unified_t wmi_handle = (wmi_unified_t) wmi_hdl;
+
+	if (wmi_handle->ops->send_d0wow_disable_cmd)
+		return wmi_handle->ops->send_d0wow_disable_cmd(
+					wmi_handle, mac_id);
+
+	return QDF_STATUS_E_FAILURE;
+}
+#endif
+
 /**
  *  wmi_unified_wow_enable_send() - WMI wow enable function
  *  @param wmi_handle      : handle to WMI.
@@ -2583,6 +2623,19 @@ QDF_STATUS wmi_unified_add_clear_mcbc_filter_cmd(void *wmi_hdl,
 	return QDF_STATUS_E_FAILURE;
 }
 
+QDF_STATUS wmi_unified_multiple_add_clear_mcbc_filter_cmd(void *wmi_hdl,
+				     uint8_t vdev_id,
+				     struct mcast_filter_params *filter_param)
+{
+	wmi_unified_t wmi_handle = (wmi_unified_t) wmi_hdl;
+
+	if (wmi_handle->ops->send_multiple_add_clear_mcbc_filter_cmd)
+		return wmi_handle->ops->send_multiple_add_clear_mcbc_filter_cmd(
+				wmi_handle, vdev_id, filter_param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
 /**
  * wmi_unified_send_gtk_offload_cmd() - send GTK offload command to fw
  * @wmi_handle: wmi handle
@@ -2816,8 +2869,8 @@ QDF_STATUS wmi_unified_process_ch_avoid_update_cmd(void *wmi_hdl)
  */
 QDF_STATUS wmi_unified_send_regdomain_info_to_fw_cmd(void *wmi_hdl,
 				   uint32_t reg_dmn, uint16_t regdmn2G,
-				   uint16_t regdmn5G, int8_t ctl2G,
-				   int8_t ctl5G)
+				   uint16_t regdmn5G, uint8_t ctl2G,
+				   uint8_t ctl5G)
 {
 	wmi_unified_t wmi_handle = (wmi_unified_t) wmi_hdl;
 
@@ -3507,6 +3560,34 @@ QDF_STATUS wmi_unified_get_arp_stats_req(void *wmi_hdl,
 	return QDF_STATUS_E_FAILURE;
 }
 
+QDF_STATUS wmi_unified_set_del_pmkid_cache(void *wmi_hdl,
+					   wmi_pmk_cache *req_buf,
+					   uint32_t vdev_id)
+{
+	wmi_unified_t wmi_handle = (wmi_unified_t) wmi_hdl;
+
+	if (wmi_handle->ops->send_set_del_pmkid_cache_cmd)
+		return wmi_handle->ops->send_set_del_pmkid_cache_cmd(wmi_handle,
+								     req_buf,
+								     vdev_id);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+#if defined (WLAN_FEATURE_FILS_SK)
+QDF_STATUS wmi_unified_roam_send_hlp_cmd(void *wmi_hdl,
+					 struct hlp_params *req_buf)
+{
+	wmi_unified_t wmi_handle = (wmi_unified_t) wmi_hdl;
+
+	if (wmi_handle->ops->send_roam_scan_send_hlp_cmd)
+		return wmi_handle->ops->send_roam_scan_send_hlp_cmd(wmi_handle,
+								    req_buf);
+
+	return QDF_STATUS_E_FAILURE;
+}
+#endif
+
 /**
  * wmi_unified_get_buf_extscan_hotlist_cmd() - prepare hotlist command
  * @wmi_hdl: wmi handle
@@ -3540,7 +3621,7 @@ wmi_unified_set_active_bpf_mode_cmd(void *wmi_hdl,
 	wmi_unified_t wmi = (wmi_unified_t)wmi_hdl;
 
 	if (!wmi->ops->send_set_active_bpf_mode_cmd) {
-		WMI_LOGI("send_set_active_bpf_mode_cmd op is NULL");
+		WMI_LOGD("send_set_active_bpf_mode_cmd op is NULL");
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -6299,6 +6380,26 @@ QDF_STATUS wmi_unified_send_dbs_scan_sel_params_cmd(void *wmi_hdl,
 		return wmi_handle->ops->
 			send_dbs_scan_sel_params_cmd(wmi_handle,
 				  dbs_scan_params);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+/**
+ * wmi_unified_send_limit_off_chan_cmd() - send wmi cmd of limit off channel
+ * configuration params
+ * @wmi_hdl:  wmi handler
+ * @limit_off_chan_param: pointer to wmi_limit_off_chan_param
+ *
+ * Return: QDF_STATUS_SUCCESS on success and QDF failure reason code on failure
+ */
+QDF_STATUS wmi_unified_send_limit_off_chan_cmd(void *wmi_hdl,
+			struct wmi_limit_off_chan_param *limit_off_chan_param)
+{
+	wmi_unified_t wmi_handle = (wmi_unified_t) wmi_hdl;
+
+	if (wmi_handle->ops->send_limit_off_chan_cmd)
+		return wmi_handle->ops->send_limit_off_chan_cmd(wmi_handle,
+				limit_off_chan_param);
 
 	return QDF_STATUS_E_FAILURE;
 }
