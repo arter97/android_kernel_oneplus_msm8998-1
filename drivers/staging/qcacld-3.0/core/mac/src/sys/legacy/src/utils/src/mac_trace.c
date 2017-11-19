@@ -49,7 +49,6 @@
 #include "qdf_trace.h"
 #include "wma_if.h"
 
-#ifdef TRACE_RECORD
 /**
  * mac_trace_get_neighbour_roam_state() - Get the neighbor roam state
  * @neighbourroamstate: State in numeric form
@@ -896,5 +895,3 @@ void mac_trace_new(tpAniSirGlobal mac_ctx, uint8_t module, uint8_t code,
 {
 	qdf_trace(module, code, session, data);
 }
-
-#endif

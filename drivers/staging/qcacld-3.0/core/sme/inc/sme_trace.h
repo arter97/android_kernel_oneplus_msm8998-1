@@ -36,7 +36,6 @@
 
 #include "mac_trace.h"
 
-#define NO_SESSION 0xFF
 enum {
 	TRACE_CODE_SME_RX_HDD_MSG_SCAN_REQ,
 	TRACE_CODE_SME_RX_HDD_MSG_SCAN_GET_RESULTS,

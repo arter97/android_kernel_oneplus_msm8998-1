@@ -42,7 +42,7 @@
 #include "qdf_trace.h"
 #include "qdf_mem.h"
 #include "qdf_types.h"
-#include "host_diag_core_event.h"
+#include "../../utils/host_diag_log/inc/host_diag_core_event.h"
 #include "csr_link_list.h"
 #include "sme_power_save.h"
 

@@ -2618,10 +2618,12 @@ static int wma_process_mgmt_tx_completion(tp_wma_handle wma_handle,
 		qdf_nbuf_unmap_single(pdev->osdev, wmi_desc->nbuf,
 					  QDF_DMA_TO_DEVICE);
 
+#ifdef FEATURE_PKTLOG
 	packetdump_cb = wma_handle->wma_mgmt_tx_packetdump_cb;
 	if (packetdump_cb)
 		packetdump_cb(wmi_desc->nbuf, QDF_STATUS_SUCCESS,
 			wmi_desc->vdev_id, TX_MGMT_PKT);
+#endif
 
 	if (wmi_desc->tx_cmpl_cb) {
 		wmi_desc->tx_cmpl_cb(wma_handle->mac_context,
@@ -3550,12 +3552,14 @@ static int wma_mgmt_rx_process(void *handle, uint8_t *data,
 		return -EINVAL;
 	}
 
+#ifdef FEATURE_PKTLOG
 	packetdump_cb = wma_handle->wma_mgmt_rx_packetdump_cb;
 	if ((mgt_type == IEEE80211_FC0_TYPE_MGT &&
 			mgt_subtype != IEEE80211_FC0_SUBTYPE_BEACON) &&
 			packetdump_cb)
 		packetdump_cb(rx_pkt->pkt_buf, QDF_STATUS_SUCCESS,
 			rx_pkt->pkt_meta.sessionId, RX_MGMT_PKT);
+#endif
 
 	wma_handle->mgmt_rx(wma_handle, rx_pkt);
 	return 0;

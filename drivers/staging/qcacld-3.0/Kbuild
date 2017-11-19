@@ -1057,13 +1057,9 @@ INCS +=		$(NLINK_INC) \
 
 INCS +=		$(PLD_INC)
 
-ifeq ($(CONFIG_REMOVE_PKT_LOG), 0)
 INCS +=		$(PKTLOG_INC)
-endif
 
-ifeq ($(BUILD_DIAG_VERSION), 1)
 INCS +=		$(HOST_DIAG_LOG_INC)
-endif
 
 OBJS :=		$(HDD_OBJS) \
 		$(EPPING_OBJS) \
@@ -1140,10 +1136,6 @@ CDEFINES :=	-DANI_LITTLE_BYTE_ENDIAN \
 		-DWMI_CMD_STRINGS \
 		-DCONFIG_HDD_INIT_WITH_RTNL_LOCK
 
-ifneq ($(CONFIG_HIF_USB), 1)
-CDEFINES += -DWLAN_LOGGING_SOCK_SVC_ENABLE
-endif
-
 ifeq ($(CONFIG_WLAN_FEATURE_FILS),y)
 CDEFINES += -DWLAN_FEATURE_FILS_SK
 endif
@@ -1207,6 +1199,8 @@ ifneq ($(CONFIG_QCA_CLD_WLAN),)
 CDEFINES += -DWCN_PRONTO
 CDEFINES += -DWCN_PRONTO_V1
 endif
+
+CDEFINES +=	-DNO_SESSION=0xFF
 
 ifeq ($(BUILD_DEBUG_VERSION),1)
 CDEFINES +=	-DWLAN_DEBUG \
@@ -1687,6 +1681,12 @@ EXTRA_CFLAGS += -Wmissing-prototypes
 ifeq ($(call cc-option-yn, -Wheader-guard),y)
 EXTRA_CFLAGS += -Wheader-guard
 endif
+
+ifeq ($(call cc-option-yn, -Wmisleading-indentation),y)
+EXTRA_CFLAGS += -Wno-misleading-indentation
+endif
+
+EXTRA_CFLAGS += -Wno-error
 
 # If the module name is not "wlan", then the define MULTI_IF_NAME to be the
 # same a the QCA CHIP name. The host driver will then append MULTI_IF_NAME to

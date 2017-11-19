@@ -9676,6 +9676,7 @@ static int __iw_get_char_setnone(struct net_device *dev,
 
 
 			buf =
+#ifdef FEATURE_WLAN_DIAG_SUPPORT
 				scnprintf(extra + len, WE_MAX_STR_LEN - len,
 					  "\n HDD Conn State - %s "
 					  "\n \n SME State:"
@@ -9694,10 +9695,18 @@ static int __iw_get_char_setnone(struct net_device *dev,
 						  (sme_get_current_roam_sub_state
 							  (hHal, useAdapter->sessionId))
 					  );
+#else
+				scnprintf(extra + len, WE_MAX_STR_LEN - len,
+					  "\n HDD Conn State - %s ",
+					  hdd_connection_state_string
+						  (pHddStaCtx->conn_info.connState)
+					  );
+#endif
 			len += buf;
 			adapter_num++;
 		}
 
+#ifdef WLAN_DEBUG
 		if (hHal) {
 			/* Printing Lim State starting with global lim states */
 			buf =
@@ -9736,6 +9745,7 @@ static int __iw_get_char_setnone(struct net_device *dev,
 				count++;
 			}
 		}
+#endif
 
 		wrqu->data.length = strlen(extra) + 1;
 		break;

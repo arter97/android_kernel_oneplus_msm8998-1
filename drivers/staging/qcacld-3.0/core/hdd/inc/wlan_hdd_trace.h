@@ -30,8 +30,6 @@
 
 #include "mac_trace.h"
 
-#define NO_SESSION 0xFF
-
 #undef ENUMS
 #define ENUMS \
 	ENUM(TRACE_CODE_HDD_OPEN_REQUEST) \

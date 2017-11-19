@@ -7710,7 +7710,6 @@ send_dfs_phyerr_filter_offload_en_cmd_tlv(wmi_unified_t wmi_handle,
 	return QDF_STATUS_SUCCESS;
 }
 
-#if !defined(REMOVE_PKT_LOG)
 /**
  * send_pktlog_wmi_send_cmd_tlv() - send pktlog enable/disable command to target
  * @wmi_handle: wmi handle
@@ -7723,6 +7722,7 @@ QDF_STATUS send_pktlog_wmi_send_cmd_tlv(wmi_unified_t wmi_handle,
 				   WMI_PKTLOG_EVENT pktlog_event,
 				   WMI_CMD_ID cmd_id, uint8_t user_triggered)
 {
+#if !defined(REMOVE_PKT_LOG)
 	WMI_PKTLOG_EVENT PKTLOG_EVENT;
 	WMI_CMD_ID CMD_ID;
 	wmi_pdev_pktlog_enable_cmd_fixed_param *cmd;
@@ -7787,8 +7787,10 @@ QDF_STATUS send_pktlog_wmi_send_cmd_tlv(wmi_unified_t wmi_handle,
 wmi_send_failed:
 	wmi_buf_free(buf);
 	return QDF_STATUS_E_FAILURE;
-}
 #endif /* REMOVE_PKT_LOG */
+
+	return QDF_STATUS_SUCCESS;
+}
 
 /**
  * send_add_wow_wakeup_event_cmd_tlv() -  Configures wow wakeup events.

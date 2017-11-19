@@ -44,7 +44,7 @@
    Include Files
    ------------------------------------------------------------------------*/
 #include "qdf_types.h"
-#include "i_host_diag_core_log.h"
+#include "../src/i_host_diag_core_log.h"
 
 /*--------------------------------------------------------------------------
    Preprocessor definitions and constants
