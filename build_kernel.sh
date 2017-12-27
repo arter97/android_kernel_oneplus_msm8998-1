@@ -30,11 +30,12 @@ cd $RAMFS_TMP
 
 find . -name '*.sh' -exec chmod 755 {} \;
 
-$KERNELDIR/ramdisk_fix_permissions.sh 2>/dev/null
-
 #clear git repositories in ramfs
 find . -name .git -exec rm -rf {} \;
 find . -name EMPTY_DIRECTORY -exec rm -rf {} \;
+
+$KERNELDIR/ramdisk_fix_permissions.sh 2>/dev/null
+
 cd $KERNELDIR
 rm -rf $RAMFS_TMP/tmp/*
 
