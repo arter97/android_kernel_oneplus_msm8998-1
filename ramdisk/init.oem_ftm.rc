@@ -1,0 +1,123 @@
+# this file should import init.rc and then add some oem defined service
+
+#this service is a non-use service and just use to duplicate real console service
+service console /system/bin/xxx
+    class core
+    console
+    disabled
+    user root
+    group shell log
+    oneshot
+    seclabel u:r:shell:s0
+
+#this service is a non-use service and just use to duplicate real surfaceflinger service
+service surfaceflinger /system/bin/xxx
+    class core
+    oneshot
+    disabled
+
+#this service is a non-use service and just use to duplicate real servicemanager service
+
+#donot disable servicemanager, otherwise, will always print  binder error log
+#service servicemanager /system/bin/xxx
+#    class core
+#    oneshot
+#    disabled
+
+#Start up peripheral manager
+#pm-service
+#service per_mgr system/bin/xxx
+#    class core
+#    user system
+#    group system net_raw
+#    ioprio rt 4
+#    disabled
+
+#service per_mgr_ftm system/bin/pm-service
+#    class core
+#    user system
+#    group system net_raw
+#    ioprio rt 4
+#    disabled
+
+#pm-proxy
+#service per_proxy /system/bin/xxx
+#    class core
+#    user system
+#    group system
+#    disabled
+
+#service healthd /sbin/xxx
+#    class core
+#    critical
+#    seclabel u:r:healthd:s0
+#    group root system
+#    disabled
+
+service oemasserttip /system/bin/xxx
+     class main
+     user system
+     disabled
+
+import /init.rc
+
+on post-fs-data
+    chmod 0666 /dev/block/sda9
+    chmod 0666 /dev/block/mmcblk0p47
+    chmod 0666 /dev/param
+
+service wcnss-service-f /system/bin/wcnss_service -f
+    class main
+    user root
+    group system wifi radio
+    oneshot
+    disabled
+
+service factory /system/vendor/bin/factory
+    class late_start
+    disabled
+
+service ftm_power_config /system/bin/sh /ftm_power_config.sh
+    class late_start
+    user root
+    disabled
+    oneshot
+
+on oem_ftm
+    chown system system /system/vendor/bin/factory
+    chmod 0777  /system/vendor/bin/factory
+    chown system system system/bin/ptt_socket_app
+    chmod 0777  /system/bin/ptt_socket_app
+    write /sys/class/android_usb/android0/iSerial 4F4E45  #one
+
+# write /sys/module/manage/parameters/mask_wake_irq 95,135 will mask these irqs wakeup feature
+on property:ro.wandrfmode=0
+    start qcamerasvr
+    start qcom-sh
+    start self-init
+    start qmuxd
+    start wcnss-service-f
+    start factory
+    start ftm_power_config
+    start cnss-daemon
+    write /sys/class/power_supply/battery/charging_enabled 0
+    write /sys/module/manage/parameters/mask_wake_irq 95,135
+
+on property:ro.wandrfmode=1
+#    start per_mgr_ftm
+    start qcom-sh
+    start self-init
+    start qmuxd
+    start wcnss-service-f
+    start ptt_ffbm
+    start ftm_power_config
+    start ril-daemon
+    start cnss-daemon
+
+on property:ro.wandrfmode=2
+#    start per_mgr_ftm
+    start qcom-sh
+    start self-init
+    start qcom-c_main-sh
+    start ftm_power_config
+    write /sys/class/power_supply/battery/charging_enabled 0
