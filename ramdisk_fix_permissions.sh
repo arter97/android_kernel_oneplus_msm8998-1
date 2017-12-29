@@ -1,7 +1,7 @@
 #!/bin/bash
 chmod 644 file_contexts
 chmod 644 se*
-chmod 644 *.sh
+chmod 755 *.sh
 chmod 644 *.rc
 chmod 750 init*
 chmod 640 fstab*
