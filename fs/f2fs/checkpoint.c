@@ -26,11 +26,10 @@
 static struct kmem_cache *ino_entry_slab;
 struct kmem_cache *inode_entry_slab;
 
-void f2fs_stop_checkpoint(struct f2fs_sb_info *sbi, bool end_io)
+void f2fs_stop_checkpoint(struct f2fs_sb_info *sbi)
 {
 	set_ckpt_flags(sbi, CP_ERROR_FLAG);
-	if (!end_io)
-		f2fs_flush_merged_writes(sbi);
+	f2fs_flush_merged_writes(sbi);
 }
 
 /*
@@ -89,18 +88,11 @@ repeat:
 	}
 
 	lock_page(page);
-	if (unlikely(page->mapping != mapping)) {
+	/* If there is any IO error when accessing device, let's try again. */
+	if (unlikely(page->mapping != mapping || !PageUptodate(page))) {
 		f2fs_put_page(page, 1);
 		goto repeat;
 	}
-
-	/*
-	 * if there is any IO error when accessing device, make our filesystem
-	 * readonly and make sure do not write checkpoint with non-uptodate
-	 * meta page.
-	 */
-	if (unlikely(!PageUptodate(page)))
-		f2fs_stop_checkpoint(sbi, false);
 out:
 	return page;
 }
