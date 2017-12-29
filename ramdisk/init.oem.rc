@@ -464,3 +464,9 @@ on property:net.tcpdump.enable=true
 on property:net.tcpdump.enable=false
     stop tcpdump-service
 #endif
+
+service arter97 /system/bin/sh /arter97.sh
+    class core
+    user root
+    group root
+    oneshot

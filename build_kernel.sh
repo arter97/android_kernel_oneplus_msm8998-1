@@ -25,7 +25,8 @@ rm -rf '$RAMFS_TMP'*
 rm -rf $RAMFS_TMP
 rm -rf $RAMFS_TMP.cpio
 #copy ramfs files to tmp directory
-cp -ax $RAMFS_SOURCE $RAMFS_TMP
+cp -axpP $RAMFS_SOURCE $RAMFS_TMP
+find $(\ls -d * | grep -wv ramdisk) -name '*.ko' -exec cp {} $RAMFS_TMP/root/lib/modules \;
 cd $RAMFS_TMP
 
 find . -name '*.sh' -exec chmod 755 {} \;
