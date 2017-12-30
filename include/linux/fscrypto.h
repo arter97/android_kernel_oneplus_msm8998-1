@@ -250,8 +250,8 @@ extern void fscrypt_restore_control_page(struct page *);
 extern int fscrypt_zeroout_range(struct inode *, pgoff_t, sector_t,
 						unsigned int);
 /* policy.c */
-extern int fscrypt_process_policy(struct file *, const struct fscrypt_policy *);
-extern int fscrypt_get_policy(struct inode *, struct fscrypt_policy *);
+extern int fscrypt_ioctl_set_policy(struct file *, const void __user *);
+extern int fscrypt_ioctl_get_policy(struct file *, void __user *);
 extern int fscrypt_has_permitted_context(struct inode *, struct inode *);
 extern int fscrypt_inherit_context(struct inode *, struct inode *,
 					void *, bool);
@@ -283,6 +283,7 @@ static inline struct fscrypt_ctx *fscrypt_notsupp_get_ctx(struct inode *i,
 
 static inline void fscrypt_notsupp_release_ctx(struct fscrypt_ctx *c)
 {
+	return;
 }
 
 static inline struct page *fscrypt_notsupp_encrypt_page(struct inode *i,
@@ -299,14 +300,17 @@ static inline int fscrypt_notsupp_decrypt_page(struct page *p)
 static inline void fscrypt_notsupp_decrypt_bio_pages(struct fscrypt_ctx *c,
 						struct bio *b)
 {
+	return;
 }
 
 static inline void fscrypt_notsupp_pullback_bio_page(struct page **p, bool b)
 {
+	return;
 }
 
 static inline void fscrypt_notsupp_restore_control_page(struct page *p)
 {
+	return;
 }
 
 static inline int fscrypt_notsupp_zeroout_range(struct inode *i, pgoff_t p,
@@ -316,14 +320,14 @@ static inline int fscrypt_notsupp_zeroout_range(struct inode *i, pgoff_t p,
 }
 
 /* policy.c */
-static inline int fscrypt_notsupp_process_policy(struct file *f,
-				const struct fscrypt_policy *p)
+static inline int fscrypt_notsupp_ioctl_set_policy(struct file *f,
+				const void __user *arg)
 {
 	return -EOPNOTSUPP;
 }
 
-static inline int fscrypt_notsupp_get_policy(struct inode *i,
-				struct fscrypt_policy *p)
+static inline int fscrypt_notsupp_ioctl_get_policy(struct file *f,
+				void __user *arg)
 {
 	return -EOPNOTSUPP;
 }
@@ -349,6 +353,7 @@ static inline int fscrypt_notsupp_get_encryption_info(struct inode *i)
 static inline void fscrypt_notsupp_put_encryption_info(struct inode *i,
 					struct fscrypt_info *f)
 {
+	return;
 }
 
  /* fname.c */
@@ -368,6 +373,7 @@ static inline int fscrypt_notsupp_setup_filename(struct inode *dir,
 
 static inline void fscrypt_notsupp_free_filename(struct fscrypt_name *fname)
 {
+	return;
 }
 
 static inline u32 fscrypt_notsupp_fname_encrypted_size(struct inode *i, u32 s)
@@ -385,6 +391,7 @@ static inline int fscrypt_notsupp_fname_alloc_buffer(struct inode *inode,
 
 static inline void fscrypt_notsupp_fname_free_buffer(struct fscrypt_str *c)
 {
+	return;
 }
 
 static inline int fscrypt_notsupp_fname_disk_to_usr(struct inode *inode,
