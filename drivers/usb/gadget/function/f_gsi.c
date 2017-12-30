@@ -3057,7 +3057,7 @@ static struct config_item_type gsi_func_type = {
 static int gsi_set_inst_name(struct usb_function_instance *fi,
 	const char *name)
 {
-	int ret, name_len;
+	int prot_id, name_len;
 	struct f_gsi *gsi;
 	struct gsi_opts *opts = container_of(fi, struct gsi_opts, func_inst);
 
@@ -3065,8 +3065,8 @@ static int gsi_set_inst_name(struct usb_function_instance *fi,
 	if (name_len > MAX_INST_NAME_LEN)
 		return -ENAMETOOLONG;
 
-	ret = name_to_prot_id(name);
-	if (ret < 0) {
+	prot_id = name_to_prot_id(name);
+	if (prot_id < 0) {
 		pr_err("%s: failed to find prot id for %s instance\n",
 		__func__, name);
 		return -EINVAL;
@@ -3076,7 +3076,7 @@ static int gsi_set_inst_name(struct usb_function_instance *fi,
 		config_group_init_type_name(&opts->func_inst.group, "",
 					    &gsi_func_rndis_type);
 
-	gsi = gsi_function_init(ret);
+	gsi = gsi_function_init(prot_id);
 	if (IS_ERR(gsi))
 		return PTR_ERR(gsi);
 
