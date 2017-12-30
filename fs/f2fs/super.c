@@ -1107,7 +1107,7 @@ static int f2fs_unfreeze(struct super_block *sb)
 	return 0;
 }
 
-#ifdef CONFIG_QUOTA
+#if 0
 static int f2fs_statfs_project(struct super_block *sb,
 				kprojid_t projid, struct kstatfs *buf)
 {
@@ -1188,7 +1188,7 @@ static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	buf->f_fsid.val[0] = (u32)id;
 	buf->f_fsid.val[1] = (u32)(id >> 32);
 
-#ifdef CONFIG_QUOTA
+#if 0
 	if (is_inode_flag_set(dentry->d_inode, FI_PROJ_INHERIT) &&
 			sb_has_quota_limits_enabled(sb, PRJQUOTA)) {
 		f2fs_statfs_project(sb, F2FS_I(dentry->d_inode)->i_projid, buf);
