@@ -2502,6 +2502,9 @@ try_onemore:
 	spin_lock_init(&sbi->iostat_lock);
 	sbi->iostat_enable = false;
 
+	/* enable readdir_ra */
+	sbi->readdir_ra = true;
+
 	for (i = 0; i < NR_PAGE_TYPE; i++) {
 		int n = (i == META) ? 1: NR_TEMP_TYPE;
 		int j;
