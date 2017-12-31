@@ -75,10 +75,6 @@ service dtest /system/bin/sh /system/xbin/dtest.sh
     class main
     disabled
 
-service oemlogkit /system/bin/oemlogkit
-    class core
-    socket oemlogkit stream 666
-
 service charger_logkit /charger_log
     oneshot
     disabled
