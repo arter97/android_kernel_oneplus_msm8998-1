@@ -18,3 +18,6 @@ chmod 750 sbin/*
 chmod 751 storage
 chmod 755 sys
 chmod 755 system
+chmod 750 .backup/init
+chmod 400 .backup/.magisk
+chmod 700 .backup

@@ -30,11 +30,16 @@ find $(\ls -d * | grep -wv ramdisk) -name '*.ko' -exec cp -n {} $RAMFS_TMP/root/
 $(cat Makefile | grep CROSS_COMPILE | tr ' ' '\n' | grep '/' | tail -n1)strip --strip-debug --strip-unneeded $RAMFS_TMP/root/lib/modules/*.ko 2>/dev/null
 cd $RAMFS_TMP
 
-find . -name '*.sh' -exec chmod 755 {} \;
-
 #clear git repositories in ramfs
 find . -name .git -exec rm -rf {} \;
 find . -name EMPTY_DIRECTORY -exec rm -rf {} \;
+
+if [ "${1}" = "skip" ] ; then
+	# Use Magisk
+	mv init .backup/init.tmp
+	mv .backup/init .
+	mv .backup/init.tmp .backup/init
+fi
 
 $KERNELDIR/ramdisk_fix_permissions.sh 2>/dev/null
 
