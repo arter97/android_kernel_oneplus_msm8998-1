@@ -15,9 +15,5 @@ mount -t f2fs \
           exit 0 )
 
 # EXT4
-if grep -q fileencryption=ice /vendor/etc/fstab.qcom; then
-  sed -i -e 's@USERDATA@/dev/block/bootdevice/by-name/userdata    /data             ext4   nosuid,nodev,noatime,noauto_da_alloc             wait,check,fileencryption=ice,quota@g' /fstab.qcom
-else
-  sed -i -e 's@USERDATA@/dev/block/bootdevice/by-name/userdata    /data             ext4   nosuid,nodev,noatime,noauto_da_alloc             wait,check,quota@g' /fstab.qcom
-fi
+sed -i -e 's@USERDATA@/dev/block/bootdevice/by-name/userdata    /data             ext4   nosuid,nodev,noatime,noauto_da_alloc             wait,check,encryptable=ice,quota@g' /fstab.qcom
 touch fstab.ready
