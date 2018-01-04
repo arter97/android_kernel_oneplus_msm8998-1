@@ -10,9 +10,10 @@ mount -t f2fs \
       /dev/block/bootdevice/by-name/userdata /data && \
         ( umount /data; \
           sed -i -e 's@USERDATA@/dev/block/bootdevice/by-name/userdata    /data             f2fs   nosuid,nodev,noatime,discard,background_gc=off   wait,check,formattable,quota@g' fstab.qcom; \
-          touch /fstab.ready; \
+          touch fstab.ready; \
           echo "Mounted userdata as f2fs"; \
           exit 0 )
 
 # EXT4
 sed -i -e 's@USERDATA@/dev/block/bootdevice/by-name/userdata    /data             ext4   nosuid,nodev,noatime,noauto_da_alloc             wait,check,fileencryption=ice,quota@g' /fstab.qcom
+touch fstab.ready
