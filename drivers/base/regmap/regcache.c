@@ -21,7 +21,6 @@
 
 static const struct regcache_ops *cache_types[] = {
 	&regcache_rbtree_ops,
-	&regcache_lzo_ops,
 	&regcache_flat_ops,
 };
 

@@ -4,8 +4,6 @@
 
 config REGMAP
 	default y if (REGMAP_I2C || REGMAP_SPI || REGMAP_SPMI || REGMAP_AC97 || REGMAP_MMIO || REGMAP_IRQ || REGMAP_SWR)
-	select LZO_COMPRESS
-	select LZO_DECOMPRESS
 	select IRQ_DOMAIN if REGMAP_IRQ
 	bool
 
