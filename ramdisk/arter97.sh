@@ -15,9 +15,9 @@ while pgrep -f bootanimation > /dev/null; do
 done
 
 # Configure input boost
-echo "0:1248000 4:1344000" > /sys/module/cpu_boost/parameters/input_boost_freq
+echo "1248000 1344000" > /sys/module/cpu_boost/parameters/input_boost_freq
 echo 90 > /sys/module/cpu_boost/parameters/input_boost_ms
-echo "0:1171200 4:1190400" > /sys/module/cpu_boost/parameters/input_boost_freq_s2
+echo "1171200 1190400" > /sys/module/cpu_boost/parameters/input_boost_freq_s2
 echo 150 > /sys/module/cpu_boost/parameters/input_boost_ms_s2
 
 # Configure CPU governor
