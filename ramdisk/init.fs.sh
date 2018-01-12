@@ -16,4 +16,5 @@ mount -t f2fs \
 
 # EXT4
 sed -i -e 's@USERDATA@/dev/block/bootdevice/by-name/userdata    /data             ext4   nosuid,nodev,noatime,noauto_da_alloc             wait,check,encryptable=ice,quota@g' /fstab.qcom
+rm /root/lib/libsqlite.so /root/lib64/libsqlite.so
 touch fstab.ready

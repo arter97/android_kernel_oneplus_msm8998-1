@@ -7,6 +7,8 @@ export PATH=/res/asset:$PATH
 cd /root
 find . -type f -exec mount --bind {} /system/{} \;
 
+touch /.bind
+
 while ! pgrep -f com.android.systemui > /dev/null; do
   sleep 1
 done
