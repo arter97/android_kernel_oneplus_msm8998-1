@@ -3,7 +3,6 @@ user=system seinfo=platform name=com.qualcomm.services.location domain=location_
 user=system seinfo=platform name=com.qualcomm.location.XT domain=location_app type=location_app_data_file
 user=system seinfo=platform name=com.qualcomm.qti.auth.fidocryptoservice domain=qsee_svc_app type=qsee_svc_app_data_file
 user=system seinfo=platform name=com.qualcomm.qti.securemsm.mdtp.MdtpService domain=mdtpservice_app type=mdtp_svc_app_data_file
-user=system seinfo=platform name=com.qualcomm.telephony domain=qtelephony type=system_app_data_file
 user=system seinfo=platform name=com.qualcomm.qti.qdma domain=qdma_app type=qdma_app_data_file
 user=_app seinfo=platform name=com.qualcomm.timeservice domain=timeservice_app type=app_data_file levelFrom=all
 user=system seinfo=platform name=com.qualcomm.qti.logkit domain=qti_logkit_app type=system_app_data_file

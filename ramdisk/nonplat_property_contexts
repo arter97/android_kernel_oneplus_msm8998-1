@@ -13,7 +13,6 @@ ctl.ipacm-diag             u:object_r:ipacm-diag_prop:s0
 ctl.ipacm                  u:object_r:ipacm_prop:s0
 ctl.mdm_helper             u:object_r:mdm_helper_prop:s0
 ctl.mpdecision             u:object_r:mpdecision_prop:s0
-ctl.msm_irqbal_lb          u:object_r:msm_irqbalance_prop:s0
 ctl.netmgrd                u:object_r:ctl_netmgrd_prop:s0
 ctl.perfd                  u:object_r:perfd_prop:s0
 ctl.port-bridge            u:object_r:ctl_port-bridge_prop:s0
@@ -26,6 +25,7 @@ ctl.vendor.imsrcsservice   u:object_r:ctl_vendor_imsrcsservice_prop:s0
 ctl.vendor.LKCore-dbg      u:object_r:ctl_LKCore_prop:s0
 ctl.vendor.LKCore-rel      u:object_r:ctl_LKCore_prop:s0
 ctl.vendor.msm_irqbalance         u:object_r:msm_irqbalance_prop:s0
+ctl.vendor.msm_irqbal_lb          u:object_r:msm_irqbalance_prop:s0
 ctl.vendor.msm_irqbl_sdm630       u:object_r:msm_irqbl_sdm630_prop:s0
 ctl.vendor.wigig_hostapd    u:object_r:ctl_vendor_wigigsvc_prop:s0
 ctl.vendor.wigig_supplicant u:object_r:ctl_vendor_wigigsvc_prop:s0
@@ -54,6 +54,8 @@ persist.oem.wifi.debug      u:object_r:oem_prop:s0
 persist.qua.op              u:object_r:oem_prop:s0
 persist.rmnet.mux          u:object_r:rmnet_mux_prop:s0
 persist.sys.user_select_call   u:object_r:radio_prop:s0
+persist.vendor.crash.cnt         u:object_r:crash_prop:s0
+persist.vendor.crash.detect        u:object_r:crash_prop:s0
 persist.vendor.fst.         u:object_r:fst_prop:s0
 persist.vendor.mmi.        u:object_r:mmi_prop:s0
 persist.vendor.radio       u:object_r:radio_prop:s0

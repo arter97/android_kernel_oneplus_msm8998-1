@@ -12,3 +12,4 @@ user=_app isPrivApp=true domain=priv_app type=app_data_file levelFrom=user
 user=_app minTargetSdkVersion=26 domain=untrusted_app type=app_data_file levelFrom=user
 user=_app domain=untrusted_app_25 type=app_data_file levelFrom=user
 user=system seinfo=platform name=.dataservices domain=dataservice_app type=system_app_data_file
+user=system seinfo=platform name=com.qualcomm.telephony domain=qtelephony type=system_app_data_file

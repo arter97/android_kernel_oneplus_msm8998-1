@@ -334,6 +334,7 @@
 /system/bin/keystore		u:object_r:keystore_exec:s0
 /system/bin/storaged		u:object_r:storaged_exec:s0
 /sys/power/wake_lock		--	u:object_r:sysfs_wake_lock:s0
+/system/bin/bt_logger		u:object_r:bt_logger_exec:s0
 /dev/socket/dumpstate		u:object_r:dumpstate_socket:s0
 /dev/socket/dnsproxyd		u:object_r:dnsproxyd_socket:s0
 /mapping_sepolicy\.cil		u:object_r:sepolicy_file:s0
@@ -342,8 +343,9 @@
 /system/bin/dumpstate		u:object_r:dumpstate_exec:s0
 /system/bin/drmserver		u:object_r:drmserver_exec:s0
 /system/bin/fsck\.f2fs		--	u:object_r:fsck_exec:s0
-/system/bin/qvrservice		u:object_r:qvrd_exec:s0
 /system/bin/smcinvoked		u:object_r:smcinvoke_daemon_exec:s0
+/system/bin/qvrservice		u:object_r:qvrd_exec:s0
+/system/bin/wfdservice		u:object_r:wfdservice_exec:s0
 /system/bin/dun-server		u:object_r:dun-server_exec:s0
 /dev/socket/qvrservice		u:object_r:qvrd_socket:s0
 /dev/socket/dpmwrapper		u:object_r:dpmwrapper_socket:s0

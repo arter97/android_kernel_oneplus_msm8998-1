@@ -1,4 +1,6 @@
 vendor.qti.hardware.fingerprint::IQtiExtendedFingerprint     u:object_r:hal_fingerprint_hwservice:s0
+android.hardware.tetheroffload.config::IOffloadConfig        u:object_r:hal_tetheroffload_hwservice:s0
+android.hardware.tetheroffload.control::IOffloadControl      u:object_r:hal_tetheroffload_hwservice:s0
 vendor.qti.hardware.radio.am::IQcRilAudio                    u:object_r:hal_telephony_hwservice:s0
 vendor.qti.hardware.radio.config::IConfig                    u:object_r:hal_telephony_hwservice:s0
 vendor.qti.hardware.radio.ims::IImsRadio                     u:object_r:hal_telephony_hwservice:s0
@@ -29,8 +31,6 @@ com.qualcomm.qti.wifidisplayhal::IHDCPSession                u:object_r:wifidisp
 vendor.qti.hardware.iop::IIop                                u:object_r:hal_iop_hwservice:s0
 com.qualcomm.qti.wifidisplayhal::IDSManager                  u:object_r:wifidisplayhalservice_hwservice:s0
 vendor.qti.hardware.alarm::IAlarm                            u:object_r:hal_alarm_qti_hwservice:s0
-android.hardware.tetheroffload.config::IOffloadConfig        u:object_r:hal_ipacm_hwservice:s0
-android.hardware.tetheroffload.control::IOffloadControl      u:object_r:hal_ipacm_hwservice:s0
 com.qualcomm.qti.uceservice::IUceService                     u:object_r:hal_imsrcsd_hwservice:s0
 com.qualcomm.qti.imscmservice::IImsCmService                 u:object_r:hal_imsrcsd_hwservice:s0
 com.quicinc.cne.api::IApiService                             u:object_r:hal_cne_hwservice:s0
@@ -45,4 +45,5 @@ vendor.qti.esepowermanager::IEsePowerManager                 u:object_r:hal_esep
 vendor.qti.voiceprint::IQtiVoicePrintService                 u:object_r:hal_voiceprint_hwservice:s0
 vendor.qti.hardware.tui_comm::ITuiComm                       u:object_r:hal_tui_comm_hwservice:s0
 vendor.qti.hardware.qdutils_disp::IQdutilsDisp               u:object_r:hal_qdutils_disp_hwservice:s0
+vendor.qti.hardware.factory::IFactory                        u:object_r:hal_factory_qti_hwservice:s0
 vendor.qti.hardware.sensorscalibrate::ISensorsCalibrate       u:object_r:hal_sensorscalibrate_qti_hwservice:s0
