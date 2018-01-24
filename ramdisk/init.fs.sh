@@ -15,6 +15,10 @@ mount -t f2fs \
           exit 0 )
 
 # EXT4
-sed -i -e 's@USERDATA@/dev/block/bootdevice/by-name/userdata    /data             ext4   nosuid,nodev,noatime,noauto_da_alloc             wait,check,encryptable=ice,quota@g' /fstab.qcom
+if grep /dev/block/bootdevice/by-name/userdata /system/vendor/etc/fstab.qcom | grep -q fileencryption=ice; then
+  sed -i -e 's@USERDATA@/dev/block/bootdevice/by-name/userdata    /data             ext4   nosuid,nodev,noatime,noauto_da_alloc             wait,check,fileencryption=ice,quota@g' /fstab.qcom
+else
+  sed -i -e 's@USERDATA@/dev/block/bootdevice/by-name/userdata    /data             ext4   nosuid,nodev,noatime,noauto_da_alloc             wait,check,quota@g' /fstab.qcom
+fi
 rm /link/lib/libsqlite.so /link/lib64/libsqlite.so
 touch fstab.ready
