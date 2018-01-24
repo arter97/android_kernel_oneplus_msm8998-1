@@ -1587,7 +1587,6 @@ void ol_rx_pkt_dump_call(
 	uint8_t peer_id,
 	uint8_t status)
 {
-#ifdef FEATURE_PKTLOG
 	v_CONTEXT_t vos_context;
 	ol_txrx_pdev_handle pdev;
 	struct ol_txrx_peer_t *peer = NULL;
@@ -1611,7 +1610,6 @@ void ol_rx_pkt_dump_call(
 	packetdump_cb = pdev->ol_rx_packetdump_cb;
 	if (packetdump_cb)
 		packetdump_cb(msdu, status, peer->vdev->vdev_id, RX_DATA_PKT);
-#endif
 }
 
 /* the msdu_list passed here must be NULL terminated */

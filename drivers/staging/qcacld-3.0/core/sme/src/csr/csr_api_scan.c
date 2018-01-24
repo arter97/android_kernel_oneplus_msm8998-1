@@ -39,8 +39,8 @@
 
 #include "csr_support.h"
 
-#include "../../../utils/host_diag_log/inc/host_diag_core_log.h"
-#include "../../../utils/host_diag_log/inc/host_diag_core_event.h"
+#include "host_diag_core_log.h"
+#include "host_diag_core_event.h"
 
 #include "cds_reg_service.h"
 #include "wma_types.h"
@@ -6027,9 +6027,9 @@ send_scan_req:
 	return status;
 }
 
+#ifdef FEATURE_WLAN_DIAG_SUPPORT_CSR
 static void csr_diag_scan_channels(tpAniSirGlobal pMac, tSmeCmd *pCommand)
 {
-#ifdef FEATURE_WLAN_DIAG_SUPPORT_CSR
 	host_log_scan_pkt_type *pScanLog = NULL;
 
 	WLAN_HOST_DIAG_LOG_ALLOC(pScanLog,
@@ -6062,8 +6062,10 @@ static void csr_diag_scan_channels(tpAniSirGlobal pMac, tSmeCmd *pCommand)
 		      pScanLog->numChannel);
 	}
 	WLAN_HOST_DIAG_LOG_REPORT(pScanLog);
-#endif
 }
+#else
+#define csr_diag_scan_channels(tpAniSirGlobal pMac, tSmeCmd *pCommand) (void)0;
+#endif /* #ifdef FEATURE_WLAN_DIAG_SUPPORT_CSR */
 
 static QDF_STATUS csr_scan_channels(tpAniSirGlobal pMac, tSmeCmd *pCommand)
 {
@@ -6090,9 +6092,7 @@ static QDF_STATUS csr_scan_channels(tpAniSirGlobal pMac, tSmeCmd *pCommand)
 	}
 	if (eCsrScanProbeBss == pCommand->u.scanCmd.reason)
 		scanReq.hiddenSsid = SIR_SCAN_HIDDEN_SSID_PE_DECISION;
-#ifdef FEATURE_WLAN_DIAG_SUPPORT_CSR
 	csr_diag_scan_channels(pMac, pCommand);
-#endif
 	csr_clear_votes_for_country_info(pMac);
 	status = csr_send_mb_scan_req(pMac, pCommand->sessionId,
 				      &pCommand->u.scanCmd.u.scanRequest,

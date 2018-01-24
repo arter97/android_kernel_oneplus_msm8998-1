@@ -672,14 +672,12 @@ ol_tx_completion_handler(ol_txrx_pdev_handle pdev,
 				ol_tx_update_arp_stats(netbuf, status);
 		}
 
-#ifdef FEATURE_PKTLOG
 		if (tx_desc->pkt_type != OL_TX_FRM_TSO) {
 			packetdump_cb = pdev->ol_tx_packetdump_cb;
 			if (packetdump_cb)
 				packetdump_cb(netbuf, status,
 					tx_desc->vdev->vdev_id, TX_DATA_PKT);
 		}
-#endif
 
 		DPTRACE(qdf_dp_trace_ptr(netbuf,
 			QDF_DP_TRACE_FREE_PACKET_PTR_RECORD,
@@ -908,12 +906,10 @@ ol_tx_single_completion_handler(ol_txrx_pdev_handle pdev,
 	/* Do one shot statistics */
 	TXRX_STATS_UPDATE_TX_STATS(pdev, status, 1, qdf_nbuf_len(netbuf));
 
-#ifdef FEATURE_PKTLOG
 	packetdump_cb = pdev->ol_tx_packetdump_cb;
 	if (packetdump_cb)
 		packetdump_cb(netbuf, status,
 			tx_desc->vdev->vdev_id, TX_MGMT_PKT);
-#endif
 
 	if (OL_TX_DESC_NO_REFS(tx_desc)) {
 		ol_tx_desc_frame_free_nonstd(pdev, tx_desc,

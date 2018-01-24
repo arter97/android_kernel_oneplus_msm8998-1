@@ -239,6 +239,7 @@ typedef enum {
 	eCsrMaxStats
 } eCsrRoamStatsClassTypes;
 
+#ifdef FEATURE_WLAN_DIAG_SUPPORT
 typedef enum {
 	eCSR_WLAN_STATUS_CONNECT = 0,
 	eCSR_WLAN_STATUS_DISCONNECT
@@ -256,6 +257,8 @@ typedef enum {
 	eCSR_REASON_ROAM_HO_FAIL,
 
 } eCsrDiagWlanStatusEventReason;
+
+#endif /* FEATURE_WLAN_DIAG_SUPPORT */
 
 typedef struct tagCsrChannel {
 	uint8_t numChannels;

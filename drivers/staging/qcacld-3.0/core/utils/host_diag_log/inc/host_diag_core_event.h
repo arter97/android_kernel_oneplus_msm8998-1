@@ -45,7 +45,7 @@
    ------------------------------------------------------------------------*/
 #include "qdf_types.h"
 #include "cds_pack_align.h"
-#include "../src/i_host_diag_core_event.h"
+#include "i_host_diag_core_event.h"
 
 /*--------------------------------------------------------------------------
    Preprocessor definitions and constants

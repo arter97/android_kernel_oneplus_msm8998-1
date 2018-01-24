@@ -2366,6 +2366,7 @@ htt_rx_amsdu_rx_in_order_pop_ll(htt_pdev_handle pdev,
 	uint8_t offload_ind, frag_ind;
 	uint8_t peer_id;
 	struct htt_host_rx_desc_base *rx_desc;
+	enum rx_pkt_fate status = RX_PKT_FATE_SUCCESS;
 	qdf_dma_addr_t paddr;
 	qdf_mem_info_t *mem_map_table = NULL, *mem_info = NULL;
 	uint32_t num_unmapped = 0;
@@ -2484,7 +2485,6 @@ htt_rx_amsdu_rx_in_order_pop_ll(htt_pdev_handle pdev,
 
 		msdu_count--;
 
-#ifdef FEATURE_PKTLOG
 		/* calling callback function for packet logging */
 		if (pdev->rx_pkt_dump_cb) {
 			if (qdf_unlikely(RX_DESC_MIC_ERR_IS_SET &&
@@ -2492,8 +2492,6 @@ htt_rx_amsdu_rx_in_order_pop_ll(htt_pdev_handle pdev,
 				status = RX_PKT_FATE_FW_DROP_INVALID;
 			pdev->rx_pkt_dump_cb(msdu, peer_id, status);
 		}
-#endif
-
 		/* if discard flag is set (SA is self MAC), then
 		 * don't check mic failure.
 		 */

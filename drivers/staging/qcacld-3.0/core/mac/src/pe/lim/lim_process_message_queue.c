@@ -1299,7 +1299,7 @@ static void lim_process_messages(tpAniSirGlobal mac_ctx, tpSirMsgQ msg)
 	}
 #ifdef WLAN_DEBUG
 	mac_ctx->lim.numTot++;
-
+#endif
 	/*
 	 * MTRACE logs not captured for events received from SME
 	 * SME enums (eWNI_SME_START_REQ) starts with 0x16xx.
@@ -1323,7 +1323,6 @@ static void lim_process_messages(tpAniSirGlobal mac_ctx, tpSirMsgQ msg)
 				LIM_TRACE_MAKE_RXMSG(msg->type,
 				LIM_MSG_PROCESSED));)
 	}
-#endif
 
 	switch (msg->type) {
 
