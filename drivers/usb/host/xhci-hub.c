@@ -397,9 +397,8 @@ static int xhci_stop_device(struct xhci_hcd *xhci, int slot_id, int suspend)
 						     GFP_NOWAIT);
 			if (!command) {
 				spin_unlock_irqrestore(&xhci->lock, flags);
-				xhci_free_command(xhci, cmd);
-				return -ENOMEM;
-
+				ret = -ENOMEM;
+				goto err_cmd_queue;
 			}
 
 			ret = xhci_queue_stop_endpoint(xhci, command, slot_id,
@@ -783,6 +782,9 @@ static u32 xhci_get_port_status(struct usb_hcd *hcd,
 			clear_bit(wIndex, &bus_state->resuming_ports);
 
 			set_bit(wIndex, &bus_state->rexit_ports);
+
+			xhci_test_and_clear_bit(xhci, port_array, wIndex,
+						PORT_PLC);
 			xhci_set_link_state(xhci, port_array, wIndex,
 					XDEV_U0);
 

@@ -2424,7 +2424,7 @@ static char elf_type(const Elf_Sym *sym, const struct load_info *info)
 	}
 	if (sym->st_shndx == SHN_UNDEF)
 		return 'U';
-	if (sym->st_shndx == SHN_ABS)
+	if (sym->st_shndx == SHN_ABS || sym->st_shndx == info->index.pcpu)
 		return 'a';
 	if (sym->st_shndx >= SHN_LORESERVE)
 		return '?';
@@ -2453,7 +2453,7 @@ static char elf_type(const Elf_Sym *sym, const struct load_info *info)
 }
 
 static bool is_core_symbol(const Elf_Sym *src, const Elf_Shdr *sechdrs,
-			unsigned int shnum)
+			unsigned int shnum, unsigned int pcpundx)
 {
 	const Elf_Shdr *sec;
 
@@ -2461,6 +2461,11 @@ static bool is_core_symbol(const Elf_Sym *src, const Elf_Shdr *sechdrs,
 	    || src->st_shndx >= shnum
 	    || !src->st_name)
 		return false;
+
+#ifdef CONFIG_KALLSYMS_ALL
+	if (src->st_shndx == pcpundx)
+		return true;
+#endif
 
 	sec = sechdrs + src->st_shndx;
 	if (!(sec->sh_flags & SHF_ALLOC)
@@ -2499,7 +2504,8 @@ static void layout_symtab(struct module *mod, struct load_info *info)
 	/* Compute total space required for the core symbols' strtab. */
 	for (ndst = i = 0; i < nsrc; i++) {
 		if (i == 0 ||
-		    is_core_symbol(src+i, info->sechdrs, info->hdr->e_shnum)) {
+		    is_core_symbol(src+i, info->sechdrs, info->hdr->e_shnum,
+				   info->index.pcpu)) {
 			strtab_size += strlen(&info->strtab[src[i].st_name])+1;
 			ndst++;
 		}
@@ -2557,7 +2563,8 @@ static void add_kallsyms(struct module *mod, const struct load_info *info)
 	src = mod->kallsyms->symtab;
 	for (ndst = i = 0; i < mod->kallsyms->num_symtab; i++) {
 		if (i == 0 ||
-		    is_core_symbol(src+i, info->sechdrs, info->hdr->e_shnum)) {
+		    is_core_symbol(src+i, info->sechdrs, info->hdr->e_shnum,
+				   info->index.pcpu)) {
 			dst[ndst] = src[i];
 			dst[ndst++].st_name = s - mod->core_kallsyms.strtab;
 			s += strlcpy(s, &mod->kallsyms->strtab[src[i].st_name],
@@ -2907,8 +2914,12 @@ static int check_modinfo(struct module *mod, struct load_info *info, int flags)
 		return -ENOEXEC;
 	}
 
-	if (!get_modinfo(info, "intree"))
+	if (!get_modinfo(info, "intree")) {
+		if (!test_taint(TAINT_OOT_MODULE))
+			pr_warn("%s: loading out-of-tree module taints kernel.\n",
+				mod->name);
 		add_taint_module(mod, TAINT_OOT_MODULE, LOCKDEP_STILL_OK);
+	}
 
 	if (get_modinfo(info, "staging")) {
 		add_taint_module(mod, TAINT_CRAP, LOCKDEP_STILL_OK);
@@ -3073,6 +3084,8 @@ static int move_module(struct module *mod, struct load_info *info)
 
 static int check_module_license_and_versions(struct module *mod)
 {
+	int prev_taint = test_taint(TAINT_PROPRIETARY_MODULE);
+
 	/*
 	 * ndiswrapper is under GPL by itself, but loads proprietary modules.
 	 * Don't use add_taint_module(), as it would prevent ndiswrapper from
@@ -3090,6 +3103,9 @@ static int check_module_license_and_versions(struct module *mod)
 	if (strcmp(mod->name, "lve") == 0)
 		add_taint_module(mod, TAINT_PROPRIETARY_MODULE,
 				 LOCKDEP_NOW_UNRELIABLE);
+
+	if (!prev_taint && test_taint(TAINT_PROPRIETARY_MODULE))
+		pr_warn("%s: module license taints kernel.\n", mod->name);
 
 #ifdef CONFIG_MODVERSIONS
 	if ((mod->num_syms && !mod->crcs)
