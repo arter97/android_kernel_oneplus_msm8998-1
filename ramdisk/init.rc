@@ -269,8 +269,8 @@ on late-init
     trigger early-fs
 
     start init-fs
-    start arter97
     wait /fstab.ready
+    start arter97
     wait /.bind
 
     mount none /fstab_nodata.qcom /vendor/etc/fstab_nodata.qcom bind
