@@ -17,6 +17,12 @@ mount --bind /system/lib/modules /system/vendor/lib/modules
 
 touch /.bind
 
+while ! grep -q MacAddress /persist/wlan_mac.bin; do
+  sleep 1
+done
+
+echo 1 > /sys/kernel/boot_wlan/boot_wlan
+
 while ! pgrep -f com.android.systemui > /dev/null; do
   sleep 1
 done
