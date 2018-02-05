@@ -38,6 +38,7 @@ hw.fm.                     u:object_r:fm_prop:s0
 location.                  u:object_r:location_prop:s0
 netd.fstman.               u:object_r:netd_prop:s0
 oem.                           u:object_r:oem_prop:s0
+persist.audio.EuropeanStandard  u:object_r:audio_prop:s0
 persist.camera.ois.disable  u:object_r:oem_prop:s0
 persist.camera.            u:object_r:camera_prop:s0
 persist.dpm.nsrm.bkg.evt    u:object_r:oem_prop:s0

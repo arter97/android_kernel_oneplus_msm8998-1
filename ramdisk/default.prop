@@ -28,6 +28,6 @@ oplib.oneplus_sdk_wrapper=0.1.0
 #
 # BOOTIMAGE_BUILD_PROPERTIES
 #
-ro.bootimage.build.date=Sun Jan 14 12:37:55 CST 2018
-ro.bootimage.build.date.utc=1515904675
+ro.bootimage.build.date=Fri Feb 2 23:45:52 CST 2018
+ro.bootimage.build.date.utc=1517586352
 persist.sys.usb.config=none

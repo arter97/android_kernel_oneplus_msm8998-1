@@ -189,6 +189,12 @@ on charger && property:ro.debuggable=1
     setprop sys.usb.configfs 1
     setprop sys.usb.config adb
 
+on charger
+    setprop sys.op_bootmode charger
+
+on property:sys.op_bootmode=charger && property:sys.usb.config=none
+    setprop sys.usb.config mass_storage
+
 #ifdef VENDOR_EDIT
 service ftmdaemon /system/vendor/bin/ftmdaemon -n
     class late_start

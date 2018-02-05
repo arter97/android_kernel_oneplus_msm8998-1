@@ -37,6 +37,7 @@ longshot                               u:object_r:longshot_service:s0
 nightdisplay                              u:object_r:nightdisplay_service:s0
 smartdisplay                              u:object_r:smartdisplay_service:s0
 fingerprints_service             u:object_r:hal_fingerprint_service:s0
+secrecy                         u:object_r:oem_service:s0
 ifaadaemon    u:object_r:ifaadaemon_service:s0
 faceulnative    u:object_r:faceulnative_service:s0
 com.fingerprints.extension.sensortest.IFingerprintSensorTest   u:object_r:fingerprintd_service:s0
