@@ -19,11 +19,6 @@ service self-init /sbin/self-init
     oneshot
     seclabel u:r:self-init:s0
 
-service oem_early_boot /system/bin/sh /init.oem.early_boot.sh
-    class core
-    user root
-    oneshot
-
 on post-fs-data
     #NFC, ruanbanmao add for 15801 nfc. 2015/10/19
     mkdir /data/nfc
@@ -124,10 +119,6 @@ on boot
     chmod 660 /sys/class/leds/red/duty_pcts
     chmod 660 /sys/class/leds/green/duty_pcts
     chmod 660 /sys/class/leds/blue/duty_pcts
-
-# Setup coredump mechanism
-    chmod 0755 /system/bin/coredump.sh
-    write /proc/sys/kernel/core_pattern |/system/bin/coredump.sh\ %p\ %u\ %t
 
 #ifdef VENDOR_EDIT
 #lifeng@bsp tp 2015/6/3 for firmware update
@@ -271,40 +262,6 @@ service OPNetlinkService /sbin/OPNetlinkService
 on charger
     start OPNetlinkService
 
-#ifdef VENDOR_EDIT
-#added by wuaijun@system
-service deleteXml /system/bin/rm data/system/packages.xml
-    class core
-    disabled
-    oneshot
-    seclabel u:r:logserver:s0
-
-service engineermode-sh /system/bin/sh /init.oem.engineermode.sh
-    class late_start
-    user root
-    oneshot
-
-service wifisocket /system/bin/sh -c "diag_socket_log -a 181.157.1.200 -p 2500 -r 10000"
-    user root
-    disabled
-    oneshot
-    seclabel u:r:logserver:s0
-
-service oemsysd /system/bin/oem-system-daemon
-    class main
-    user root
-    group root qcom_diag
-    disabled
-    seclabel u:r:logserver:s0
-
-on property:service.wifi.socket.enable=1
-    start oemsysd
-    start wifisocket
-
-on property:service.wifi.socket.enable=0
-    stop oemsysd
-    stop wifisocket
-
 on post-fs
     chown system system /proc/ship_mode
     chown system system /dev/param
@@ -346,16 +303,6 @@ on property:sys.fastcharger=false
 #endif /* VENDOR_EDIT */
 
 #ifdef VENDOR_EDIT
-#kenshen@framework, 2017/09/18, align AOSP other OEMs
-# bugreport is triggered by holding down volume down, volume up and power
-service bugreport /system/bin/dumpstate -d -p -B -z \
-        -o /data/user_de/0/com.android.shell/files/bugreports/bugreport
-    class main
-    disabled
-    oneshot
-#endif
-
-#ifdef VENDOR_EDIT
 #lifei@oneplus.media, 2016/02/14,  add service for CTS and engineer app
 service oem_audio_device /system/bin/chcon u:object_r:oem_audio_device:s0 /dev/snd
     class late_start
@@ -368,25 +315,6 @@ on property:persist.sys.oem.otg_support=true
     write /sys/class/power_supply/usb/otg_switch 1
 on property:persist.sys.oem.otg_support=false
     write /sys/class/power_supply/usb/otg_switch 0
-#endif
-
-#ifdef VENDOR_EDIT
-#kimi, 2016/03/29, trigger systrace
-on property:persist.sys.systrace.enable=true
-    start izanami
-on property:persist.sys.systrace.enable=false
-    start stop_izanami
-service izanami /system/bin/izanami
-    class main
-    user root
-    disabled
-    oneshot
-    keycodes 115 116
-service stop_izanami /system/bin/izanami stop
-    class main
-    user root
-    disabled
-    oneshot
 #endif
 
 #ifdef VENDOR_EDIT
@@ -415,34 +343,6 @@ service faceulnative /system/bin/OPFaceUnlockDaemon
 #endif
 
 #ifdef VENDOR_EDIT
-service atrace /system/bin/op_atrace -t10 -b 20480 res irq hal freq disk gfx sync sched power ss regulators video binder_lock app sm audio wm camera webview workq dalvik database bionic idle input am pagecache rs pm mmc memreclaim load view binder_driver -z --oneplus
-    class core
-    disabled
-    oneshot
-    seclabel u:r:logserver:s0
-#endif
-
-#ifdef VENDOR_EDIT
-service sniffer_set /system/bin/pktlogconf -s 30000000 -a cld
-    user root
-    disabled
-    oneshot
-    seclabel u:r:logserver:s0
-    
-service sniffer_start /system/bin/iwpriv wlan0 pktlog 1
-    user root
-    disabled
-    oneshot
-    seclabel u:r:logserver:s0
-    
-service sniffer_stop /system/bin/iwpriv wlan0 pktlog 0
-    user root
-    disabled
-    oneshot
-    seclabel u:r:logserver:s0
-#endif
-
-#ifdef VENDOR_EDIT
 service remosaic_deamon /vendor/bin/remosaic_daemon
     class late_start
     user camera
@@ -455,18 +355,4 @@ service filebuilderd /system/bin/filebuilderd
     group root system
     disabled
     oneshot
-#endif
-
-#ifdef VENDOR_EDIT
-service tcpdump-service /system/xbin/tcpdump -i any -p -s 0 -w /sdcard/oem_log/tcpdump.pcap
-    user root
-    disabled
-    oneshot
-    seclabel u:r:logserver:s0
-
-on property:net.tcpdump.enable=true
-    start tcpdump-service
-
-on property:net.tcpdump.enable=false
-    stop tcpdump-service
 #endif
