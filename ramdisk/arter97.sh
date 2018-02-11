@@ -4,12 +4,6 @@ exec > /dev/kmsg 2>&1
 
 export PATH=/res/asset:$PATH
 
-ln -s /sys/kernel/boot_wlan/boot_wlan /dev/wlan
-chown -h wifi:wifi /sys/kernel/boot_wlan/boot_wlan
-chown -h wifi:wifi /dev/wlan
-chmod 640 /sys/kernel/boot_wlan/boot_wlan
-chmod 640 /dev/wlan
-
 cd /link
 find . -type f -exec mount --bind {} /system/{} \;
 find . -type l -exec mount --bind {} /system/{} \;
