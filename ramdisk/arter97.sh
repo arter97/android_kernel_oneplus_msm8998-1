@@ -29,6 +29,10 @@ echo 1 > /sys/devices/system/cpu/cpu0/cpufreq/interactive/enable_prediction
 echo 1 > /sys/devices/system/cpu/cpu4/cpufreq/interactive/enable_prediction
 echo 59000 > /sys/devices/system/cpu/cpu4/cpufreq/interactive/max_freq_hysteresis
 
+# Set min freq for CPUs
+echo 300000 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+echo 300000 > /sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq
+
 # Disable console suspend
 echo N > /sys/module/printk/parameters/console_suspend
 
