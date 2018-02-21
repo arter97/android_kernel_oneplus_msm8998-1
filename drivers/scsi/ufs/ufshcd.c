@@ -6378,7 +6378,7 @@ static void ufshcd_err_handler(struct work_struct *work)
 	 * Dump controller state before resetting. Transfer requests state
 	 * will be dump as part of the request completion.
 	 */
-	if (hba->saved_err & (INT_FATAL_ERRORS | UIC_ERROR)) {
+	if (hba->saved_err & (INT_FATAL_ERRORS | UIC_ERROR | UIC_LINK_LOST)) {
 		dev_err(hba->dev, "%s: saved_err 0x%x saved_uic_err 0x%x",
 			__func__, hba->saved_err, hba->saved_uic_err);
 		if (!hba->silence_err_logs) {
@@ -6393,7 +6393,7 @@ static void ufshcd_err_handler(struct work_struct *work)
 		}
 	}
 
-	if ((hba->saved_err & INT_FATAL_ERRORS)
+	if ((hba->saved_err & (INT_FATAL_ERRORS | UIC_LINK_LOST))
 	    || hba->saved_ce_err || hba->force_host_reset ||
 	    ((hba->saved_err & UIC_ERROR) &&
 	    (hba->saved_uic_err & (UFSHCD_UIC_DL_PA_INIT_ERROR |
@@ -6671,6 +6671,12 @@ static irqreturn_t ufshcd_check_errors(struct ufs_hba *hba)
 
 	if (hba->errors & INT_FATAL_ERRORS || hba->ce_error)
 		queue_eh_work = true;
+
+	if (hba->errors & UIC_LINK_LOST) {
+		dev_err(hba->dev, "%s: UIC_LINK_LOST received, errors 0x%x\n",
+					__func__, hba->errors);
+		queue_eh_work = true;
+	}
 
 	if (hba->errors & UIC_ERROR) {
 		hba->uic_error = 0;
