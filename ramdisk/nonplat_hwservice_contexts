@@ -47,3 +47,6 @@ vendor.qti.hardware.tui_comm::ITuiComm                       u:object_r:hal_tui_
 vendor.qti.hardware.qdutils_disp::IQdutilsDisp               u:object_r:hal_qdutils_disp_hwservice:s0
 vendor.qti.hardware.factory::IFactory                        u:object_r:hal_factory_qti_hwservice:s0
 vendor.qti.hardware.sensorscalibrate::ISensorsCalibrate       u:object_r:hal_sensorscalibrate_qti_hwservice:s0
+vendor.qti.hardware.limits::IThermal                         u:object_r:hal_thermal_hwservice:s0
+vendor.nxp.nxpnfc::INxpNfc                                   u:object_r:hal_nfc_hwservice:s0
+vendor.oneplus.hardware.wifi::IOneplusWifi                   u:object_r:hal_wifi_hwservice:s0

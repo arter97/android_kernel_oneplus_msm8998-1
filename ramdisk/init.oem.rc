@@ -175,6 +175,13 @@ on init
     mount cgroup none /sys/fs/cgroup/freezer  freezer
     chmod 777 /sys/fs/cgroup/freezer
 
+    mkdir /sys/fs/cgroup/net_cls 
+    chmod 777 /sys/fs/cgroup/net_cls 
+    mount cgroup  none /sys/fs/cgroup/net_cls net_cls
+    chmod 777 /sys/fs/cgroup/net_cls/tasks
+    mkdir /sys/fs/cgroup/net_cls/background 0777
+    chmod 777 /sys/fs/cgroup/net_cls/background/tasks
+
 on charger && property:ro.debuggable=1
     setprop persist.sys.usb.config adb
     setprop sys.usb.configfs 1
@@ -355,4 +362,41 @@ service filebuilderd /system/bin/filebuilderd
     group root system
     disabled
     oneshot
+#endif
+
+#ifdef VENDOR_EDIT
+#[O][PREF-185] liuyaxin, 20180104, add for game mode Network boost
+    chown root system /system/xbin/gamemode_networkboost_disable.sh
+    chmod 0777  /system/xbin/gamemode_networkboost_disable.sh
+    chown root system /system/xbin/gamemode_networkboost_init.sh
+    chmod 0777  /system/xbin/gamemode_networkboost_init.sh
+    chown root system /system/xbin/gamemode_networkboost_enable.sh
+    chmod 0777  /system/xbin/gamemode_networkboost_enable.sh
+
+service networkboost_disable /system/xbin/gamemode_networkboost_disable.sh
+    user root
+    group root
+    disabled
+    oneshot
+
+service networkboost_init /system/xbin/gamemode_networkboost_init.sh
+    user root
+    group root
+    disabled
+    oneshot
+
+service networkboost_enable /system/xbin/gamemode_networkboost_enable.sh
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:persist.sys.gamemode.wifiboost=0
+    start networkboost_disable
+
+on property:persist.sys.gamemode.wifiboost=1
+    start networkboost_init
+
+on property:persist.sys.gamemode.wifiboost=2
+    start networkboost_enable
 #endif

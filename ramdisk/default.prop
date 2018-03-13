@@ -1,6 +1,7 @@
 #
 # ADDITIONAL_DEFAULT_PROPERTIES
 #
+ro.logd.size=4M
 ro.secure=1
 security.perf_harden=1
 ro.adb.secure=1
@@ -22,12 +23,14 @@ pm.dexopt.boot=verify
 pm.dexopt.install=quicken
 pm.dexopt.bg-dexopt=speed-profile
 pm.dexopt.ab-ota=speed-profile
+pm.dexopt.inactive=verify
+pm.dexopt.shared=speed
 debug.atrace.tags.enableflags=0
 oplib.oneplus_sdk_utils=0.1.2
 oplib.oneplus_sdk_wrapper=0.1.0
 #
 # BOOTIMAGE_BUILD_PROPERTIES
 #
-ro.bootimage.build.date=Fri Feb 2 23:45:52 CST 2018
-ro.bootimage.build.date.utc=1517586352
+ro.bootimage.build.date=Sat Mar 10 22:27:15 CST 2018
+ro.bootimage.build.date.utc=1520692035
 persist.sys.usb.config=none

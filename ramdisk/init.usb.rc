@@ -12,7 +12,7 @@ on post-fs-data
     mkdir /data/adb 0700 root root
 
 # adbd is controlled via property triggers in init.<platform>.usb.rc
-service adbd /sbin/adbd --root_seclabel=u:r:su:s0
+service adbd /system/bin/adbd --root_seclabel=u:r:su:s0
     class core
     socket adbd stream 660 system system
     disabled
@@ -40,7 +40,7 @@ on property:sys.boot_completed=1 && property:persist.sys.usb.config=none && prop
 # USB manager fails to set a standard configuration
 on property:sys.usb.config=adb && property:sys.usb.configfs=0
     write /sys/class/android_usb/android0/enable 0
-    write /sys/class/android_usb/android0/idVendor 2A70 #VENDOR_EDIT Anderson@, 2016/10/07, modify from 18d1 to 2A70
+    write /sys/class/android_usb/android0/idVendor 2A70
     write /sys/class/android_usb/android0/idProduct 4EE7
     write /sys/class/android_usb/android0/functions ${sys.usb.config}
     write /sys/class/android_usb/android0/enable 1
@@ -69,7 +69,7 @@ on property:sys.usb.config=accessory,adb && property:sys.usb.configfs=0
 # audio accessory configuration
 on property:sys.usb.config=audio_source && property:sys.usb.configfs=0
     write /sys/class/android_usb/android0/enable 0
-    write /sys/class/android_usb/android0/idVendor 2A70 #VENDOR_EDIT Anderson@, 2016/10/07, modify from 18d1 to 2A70
+    write /sys/class/android_usb/android0/idVendor 2A70
     write /sys/class/android_usb/android0/idProduct 2d02
     write /sys/class/android_usb/android0/functions ${sys.usb.config}
     write /sys/class/android_usb/android0/enable 1
@@ -78,7 +78,7 @@ on property:sys.usb.config=audio_source && property:sys.usb.configfs=0
 # audio accessory configuration, with adb
 on property:sys.usb.config=audio_source,adb && property:sys.usb.configfs=0
     write /sys/class/android_usb/android0/enable 0
-    write /sys/class/android_usb/android0/idVendor 2A70 #VENDOR_EDIT Anderson@, 2016/10/07, modify from 18d1 to 2A70
+    write /sys/class/android_usb/android0/idVendor 2A70
     write /sys/class/android_usb/android0/idProduct 2d03
     write /sys/class/android_usb/android0/functions ${sys.usb.config}
     write /sys/class/android_usb/android0/enable 1
