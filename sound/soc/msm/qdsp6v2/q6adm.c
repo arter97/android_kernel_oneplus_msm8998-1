@@ -99,6 +99,7 @@ struct adm_ctl {
 	int num_ec_ref_rx_chans;
 	int ec_ref_rx_bit_width;
 	int ec_ref_rx_sampling_rate;
+	int lsm_port_id;
 };
 
 static struct adm_ctl			this_adm;
@@ -2138,6 +2139,11 @@ static int get_cal_path(int path)
 		return RX_DEVICE;
 	else
 		return TX_DEVICE;
+}
+
+void adm_set_lsm_port_id(int port_id)
+{
+	this_adm.lsm_port_id = port_id;
 }
 
 static void send_adm_cal(int port_id, int copp_idx, int path, int perf_mode,

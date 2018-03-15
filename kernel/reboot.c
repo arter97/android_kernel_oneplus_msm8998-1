@@ -49,6 +49,7 @@ int reboot_force;
  */
 
 void (*pm_power_off_prepare)(void);
+extern int oem_get_download_mode(void);
 
 /**
  *	emergency_restart - reboot the system

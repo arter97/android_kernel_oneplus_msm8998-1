@@ -170,7 +170,6 @@ static int Wgestrue_gesture;		/* W */
 static int Mgestrue_gesture;		/* M */
 static int Sgestrue_gesture;		/* S */
 static int gesture_switch;
-/*ruanbanmao@BSP add for tp gesture 2015-05-06 */
 #endif
 
 /*********************for Debug LOG switch*******************/
