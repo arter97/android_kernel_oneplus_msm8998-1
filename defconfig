@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm64 4.4.115 Kernel Configuration
+# Linux/arm64 4.4.116 Kernel Configuration
 #
 CONFIG_ARM64=y
 CONFIG_64BIT=y
@@ -339,7 +339,7 @@ CONFIG_FREEZER=y
 CONFIG_ARCH_QCOM=y
 # CONFIG_ARCH_MSM8996 is not set
 CONFIG_ARCH_MSM8998=y
-CONFIG_ARCH_MSMHAMSTER=y
+# CONFIG_ARCH_MSMHAMSTER is not set
 # CONFIG_ARCH_SDM660 is not set
 # CONFIG_ARCH_SDM630 is not set
 # CONFIG_ARCH_ROCKCHIP is not set
