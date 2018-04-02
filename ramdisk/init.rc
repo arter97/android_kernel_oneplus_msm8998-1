@@ -297,6 +297,8 @@ on late-init
     trigger fs
     trigger post-fs
 
+    start f2fs-setup
+
     # Mount fstab in init.{$device}.rc by mount_all with '--late' parameter
     # to only mount entries with 'latemount'. This is needed if '--early' is
     # specified in the previous mount_all command on the fs stage.
@@ -773,6 +775,13 @@ service flash_recovery /system/bin/install-recovery.sh
     oneshot
 
 service arter97 /system/bin/sh /arter97.sh
+    user root
+    group root
+    oneshot
+    disabled
+    seclabel u:r:shell:s0
+
+service f2fs-setup /system/bin/sh /f2fs-setup.sh
     user root
     group root
     oneshot
