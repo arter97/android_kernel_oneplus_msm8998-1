@@ -17,25 +17,33 @@ export PATH=/res/asset:$PATH
   echo "f2fs-setup.sh: removing previous extensions list"
 
   HOT=$(cat $list | grep -n 'hot file extensions' | cut -d : -f 1)
-  head -n$(($HOT - 1)) $list | grep -v ':' | while read cold; do
+  COLD=$(($(cat $list | wc -l) - $HOT))
+
+  COLDLIST=$(head -n$(($HOT - 1)) $list | grep -v ':')
+  HOTLIST=$(tail -n$COLD $list)
+
+  echo $COLDLIST | tr ' ' '\n' | while read cold; do
+    echo "[c]!$cold"
     echo "[c]!$cold" > $list
   done
 
-  COLD=$(($(cat $list | wc -l) - $HOT))
-  tail -n$COLD | while read hot; do
+  echo $HOTLIST | tr ' ' '\n' | while read hot; do
+    echo "[h]!$hot"
     echo "[h]!$hot" > $list
   done
 
   echo "f2fs-setup.sh: writing new extensions list"
 
-  cat /f2fs-cold.list | grep -v '#' | while read cold; do
+  cat f2fs-cold.list | grep -v '#' | while read cold; do
     if [ ! -z $cold ]; then
+      echo "[c]$cold"
       echo "[c]$cold" > $list
     fi
   done
 
-  cat /f2fs-hot.list | while read hot; do
+  cat f2fs-hot.list | while read hot; do
     if [ ! -z $hot ]; then
+      echo "[h]$hot"
       echo "[h]$hot" > $list
     fi
   done
