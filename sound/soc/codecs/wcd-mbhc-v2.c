@@ -1875,7 +1875,8 @@ determine_plug:
 	pr_debug("%s: leave\n", __func__);
 	return IRQ_HANDLED;
 }
-#ifndef VENDOR_EDIT
+
+#if 0
 /*
  * liuhaituo@MultiMedia 2018/4/26 disable Elect Remove irq to resolve
  * apple-headset button issue
@@ -1997,6 +1998,7 @@ report_unplug:
 	return IRQ_HANDLED;
 }
 #endif
+
 static void wcd_btn_lpress_fn(struct work_struct *work)
 {
 	struct delayed_work *dwork;
@@ -3014,7 +3016,7 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 				   false);
 	clear_bit(WCD_MBHC_ELEC_HS_INS, &mbhc->intr_status);
 
-#ifndef VENDOR_EDIT
+#if 0
 /*
  * liuhaituo@MultiMedia 2018/4/26 disable Elect Remove irq to resolve
  * apple-headset button issue
@@ -3057,7 +3059,7 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 err_hphr_ocp_irq:
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->hph_left_ocp, mbhc);
 err_hphl_ocp_irq:
-#ifndef VENDOR_EDIT
+#if 0
 /*
  * liuhaituo@MultiMedia 2018/4/26 disable Elect Remove irq to resolve
  * apple-headset button issue
@@ -3094,7 +3096,7 @@ void wcd_mbhc_deinit(struct wcd_mbhc *mbhc)
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->mbhc_btn_release_intr,
 				mbhc);
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->mbhc_hs_ins_intr, mbhc);
-#ifndef VENDOR_EDIT
+#if 0
 /*
  * liuhaituo@MultiMedia 2018/4/26 disable Elect Remove irq to resolve
  * apple-headset button issue
