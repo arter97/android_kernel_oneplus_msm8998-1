@@ -4,7 +4,7 @@ exec > /dev/kmsg 2>&1
 
 export PATH=/res/asset:$PATH
 
-\ls /sys/fs/f2fs/*/extension_list | while read list; do
+find /sys/fs/f2fs -name extension_list | while read list; do
   HASH=$(md5sum $list | awk '{print $1}')
 
   if [[ $HASH == "17167603f89971ed8f9c6acc1e1cc95c" ]]; then
