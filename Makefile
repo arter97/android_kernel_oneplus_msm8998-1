@@ -400,7 +400,7 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -std=gnu89 $(call cc-option,-fno-PIE)
 
 # Optimization for msm8998
-KBUILD_CFLAGS	+= -mcpu=cortex-a73.cortex-a53+crc+crypto -fno-store-merging -Wno-attribute-alias
+KBUILD_CFLAGS	+= -mcpu=cortex-a73.cortex-a53+crc+crypto -Wno-attribute-alias
 
 # Kryo doesn't need 835769/843419 erratum fixes.
 # Some toolchains enable those fixes automatically, so opt-out.
