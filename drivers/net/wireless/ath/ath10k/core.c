@@ -1303,13 +1303,15 @@ static int ath10k_core_fetch_firmware_files(struct ath10k *ar)
 	int ret;
 	struct ath10k_fw_file *fw_file;
 
-	if (!ar->is_bmi && QCA_REV_WCN3990(ar)) {
+	if (!ar->is_bmi) {
 		fw_file = &ar->normal_mode_fw.fw_file;
 		fw_file->wmi_op_version = ATH10K_FW_WMI_OP_VERSION_TLV;
 		fw_file->htt_op_version = ATH10K_FW_HTT_OP_VERSION_TLV;
 		__set_bit(ATH10K_FW_FEATURE_WOWLAN_SUPPORT,
 			  fw_file->fw_features);
 		__set_bit(WMI_SERVICE_WOW, ar->wmi.svc_map);
+		__set_bit(ATH10K_FW_FEATURE_NO_NWIFI_DECAP_4ADDR_PADDING,
+			  fw_file->fw_features);
 		return 0;
 	}
 
