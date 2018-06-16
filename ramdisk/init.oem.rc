@@ -139,6 +139,14 @@ on boot
     write /proc/sys/net/ipv4/tcp_mtu_probing 1
 #endif /*VENDOR_EDIT*/
 
+on property:sys.boot_completed=1 && property:ro.boot.type=auto
+    setprop persist.sys.usb.config adb
+
+#/*infi@bsp 2018/05/16 select WIRELESS_CONTROLLER_REMOTE_NDIS for
+# MAC/Ubuntu usb-tethering compatible*/
+on property:sys.boot_completed=1
+    write /config/usb_gadget/g1/functions/gsi.rndis/rndis_wceis 1
+
 on property:sys.usb.ffs.ready=1 && property:oem.sys.usb.config=adb && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "adb"
     rm /config/usb_gadget/g1/configs/b.1/f1

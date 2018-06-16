@@ -36,6 +36,7 @@ debug.gralloc.             u:object_r:debug_gralloc_prop:s0
 debug.sf.nobootanimation   u:object_r:boot_animation_prop:s0
 dolby.audio.               u:object_r:audio_prop:s0
 dolby.                     u:object_r:dolby_prop:s0
+gsm.serial                     u:object_r:oem_prop:s0
 hw.fm.                     u:object_r:fm_prop:s0
 location.                  u:object_r:location_prop:s0
 mmosal.debug.config            u:object_r:oem_prop:s0
@@ -49,6 +50,9 @@ persist.dbg.vt_avail_ovr    u:object_r:oem_prop:s0
 persist.dbg.wfc_avail_ovr   u:object_r:oem_prop:s0
 persist.dpm.nsrm.bkg.evt    u:object_r:oem_prop:s0
 persist.graphics.vulkan.disable     u:object_r:graphics_vulkan_prop:s0
+persist.hwui.multidraw.bitmaps u:object_r:oem_prop:s0
+persist.hwui.rehearsal         u:object_r:oem_prop:s0
+persist.hwui.reinforce.program u:object_r:oem_prop:s0
 persist.net.doxlat         u:object_r:xlat_prop:s0
 persist.nfc.cplc           u:object_r:nfc_prop:s0
 persist.oem.bt.debug        u:object_r:oem_prop:s0
