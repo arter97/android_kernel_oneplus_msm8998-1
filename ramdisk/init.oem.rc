@@ -35,6 +35,10 @@ on post-fs-data
     #mediaserver, lifei add for Watchdog monitoring mediaextractor process. 2017/08/11
     mkdir /data/misc/media_dump 0770 mediaex mediadrm
     mkdir /data/reserve-lib 0775 system system
+    #ifdef VENDOR_EDIT
+    #KennethWang add for oem log
+    mkdir /data/oem_log  0770 system system
+    #endif /*VENDOR_EDIT*/
     
 #changhua add for fingerint
 on boot
@@ -140,6 +144,12 @@ on boot
 #endif /*VENDOR_EDIT*/
 
 on property:sys.boot_completed=1 && property:ro.boot.type=auto
+    setprop persist.sys.usb.config adb
+
+on property:sys.boot_completed=1 && property:ro.boot.type=debug
+    setprop persist.sys.usb.config adb
+
+on property:sys.boot_completed=1 && property:ro.boot.type=sdebug
     setprop persist.sys.usb.config adb
 
 #/*infi@bsp 2018/05/16 select WIRELESS_CONTROLLER_REMOTE_NDIS for
