@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm64 4.4.137 Kernel Configuration
+# Linux/arm64 4.4.153 Kernel Configuration
 #
 CONFIG_ARM64=y
 CONFIG_64BIT=y
@@ -396,7 +396,7 @@ CONFIG_PCI_LABEL=y
 # CONFIG_ARM64_ERRATUM_832075 is not set
 # CONFIG_ARM64_ERRATUM_845719 is not set
 # CONFIG_ARM64_ERRATUM_843419 is not set
-CONFIG_ARM64_ERRATUM_1024718=y
+# CONFIG_ARM64_ERRATUM_1024718 is not set
 # CONFIG_CAVIUM_ERRATUM_22375 is not set
 # CONFIG_CAVIUM_ERRATUM_23154 is not set
 # CONFIG_CAVIUM_ERRATUM_27456 is not set
