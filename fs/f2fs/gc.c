@@ -29,7 +29,7 @@
 #define TRIGGER_SOFF (!screen_on && power_supply_is_system_supplied())
 static bool screen_on = true;
 // Use 1 instead of 0 to allow thread interrupts
-static unsigned int soff_wait_ms = 1;
+#define SOFF_WAIT_MS 1
 
 static inline void gc_set_wakelock(struct f2fs_sb_info *sbi,
 		struct f2fs_gc_kthread *gc_th, bool val)
@@ -67,7 +67,7 @@ static int gc_thread_func(void *data)
 		force_gc = TRIGGER_SOFF;
 		if (force_gc) {
 			gc_set_wakelock(sbi, gc_th, true);
-			wait_ms = soff_wait_ms;
+			wait_ms = SOFF_WAIT_MS;
 			sbi->gc_mode = GC_URGENT;
 		} else {
 			gc_set_wakelock(sbi, gc_th, false);
