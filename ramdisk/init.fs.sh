@@ -10,6 +10,8 @@ mount -t f2fs \
       /dev/block/bootdevice/by-name/userdata /data && \
         ( umount /data; \
           sed -i -e 's@USERDATA@/dev/block/bootdevice/by-name/userdata    /data             f2fs   nosuid,nodev,noatime,discard,background_gc=off,fsync_mode=nobarrier   wait,formattable,quota@g' fstab.qcom; \
+          setprop debug.sqlite.journalmode OFF ;\
+          setprop debug.sqlite.syncmode OFF ;\
           touch fstab.ready; \
           echo "Mounted userdata as f2fs"; )
 
