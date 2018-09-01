@@ -22,6 +22,8 @@ service self-init /sbin/self-init
 on post-fs-data
     #NFC, ruanbanmao add for 15801 nfc. 2015/10/19
     mkdir /data/nfc
+    # Add directory to store timestamp of nfc config files
+    mkdir /data/vendor/nfc 0770 nfc nfc
     mkdir /data/oemnvitems  0771 radio radio
     #fingerint, changhua add for fp debug image usage,feature default off
     mkdir /data/fpc_images 0770 system system
@@ -157,19 +159,6 @@ on property:sys.boot_completed=1 && property:ro.boot.type=sdebug
 on property:sys.boot_completed=1
     write /config/usb_gadget/g1/functions/gsi.rndis/rndis_wceis 1
 
-on property:sys.usb.ffs.ready=1 && property:oem.sys.usb.config=adb && property:sys.usb.configfs=1
-    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "adb"
-    rm /config/usb_gadget/g1/configs/b.1/f1
-    rm /config/usb_gadget/g1/configs/b.1/f2
-    rm /config/usb_gadget/g1/configs/b.1/f3
-    rm /config/usb_gadget/g1/configs/b.1/f4
-    rm /config/usb_gadget/g1/configs/b.1/f5
-    write /config/usb_gadget/g1/idVendor 0x2A70
-    write /config/usb_gadget/g1/idProduct 0x4ee7
-    symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f1
-    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
-    setprop sys.usb.state ${oem.sys.usb.config}
-
 service qseeproxysd /system/vendor/bin/qseeproxysampledaemon
     class core
     user system
@@ -201,6 +190,11 @@ on init
     chmod 777 /sys/fs/cgroup/net_cls/background/tasks
 
 on charger && property:ro.debuggable=1
+    setprop persist.sys.usb.config adb
+    setprop sys.usb.configfs 1
+    setprop sys.usb.config adb
+
+on charger && property:ro.boot.type=auto
     setprop persist.sys.usb.config adb
     setprop sys.usb.configfs 1
     setprop sys.usb.config adb
@@ -345,11 +339,11 @@ on property:persist.sys.oem.otg_support=false
 #ifdef VENDOR_EDIT
 #xiaoxiaohuan@OnePlus.MultiMediaService,2016/09/05
 #Add smartadjust daemon to control BATTERY,BALANCED and PERFORMANCE modes.
-service smartadjust /system/bin/smartadjust
-    class core
-    critical
-    socket smartadjust seqpacket 0660 system system
-    seclabel u:r:smartadjust:s0
+#service smartadjust /system/bin/smartadjust
+#    class core
+#    critical
+#    socket smartadjust seqpacket 0660 system system
+#    seclabel u:r:smartadjust:s0
 #endif/*VENDOR_EDIT*/
 
 #ifdef VENDOR_EDIT
@@ -374,7 +368,7 @@ service remosaic_deamon /vendor/bin/remosaic_daemon
 #endif
 
 #ifdef VENDOR_EDIT
-service filebuilderd /system/bin/filebuilderd
+service filebuilderd /vendor/bin/filebuilderd
     class core
     user root
     group root system

@@ -26,8 +26,8 @@ rm -rf $RAMFS_TMP
 rm -rf $RAMFS_TMP.cpio
 #copy ramfs files to tmp directory
 cp -axpP $RAMFS_SOURCE $RAMFS_TMP
-find $(\ls -d * | grep -wv ramdisk) -name '*.ko' -exec cp -n {} $RAMFS_TMP/link/lib/modules \;
-$(cat Makefile | grep CROSS_COMPILE | tr ' ' '\n' | grep '/' | tail -n1)strip --strip-debug --strip-unneeded $RAMFS_TMP/link/lib/modules/*.ko 2>/dev/null
+find $(\ls -d * | grep -wv ramdisk) -name '*.ko' -exec cp -n {} $RAMFS_TMP/modules \;
+$(cat Makefile | grep CROSS_COMPILE | tr ' ' '\n' | grep '/' | tail -n1)strip --strip-debug --strip-unneeded $RAMFS_TMP/modules/*.ko 2>/dev/null
 cd $RAMFS_TMP
 
 #clear git repositories in ramfs

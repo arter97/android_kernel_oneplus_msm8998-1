@@ -7,7 +7,8 @@ export PATH=/res/asset:$PATH
 cd /link
 find . -type f -exec mount --bind {} /system/{} \;
 find . -type l -exec mount --bind {} /system/{} \;
-mount --bind /system/lib/modules /system/vendor/lib/modules
+mount --bind /modules /system/lib/modules
+mount --bind /modules /vendor/lib/modules
 
 touch /.bind
 
