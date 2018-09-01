@@ -138,6 +138,7 @@ do_gc:
 		if (f2fs_gc(sbi, test_opt(sbi, FORCE_FG_GC), true, NULL_SEGNO)) {
 			wait_ms = gc_th->no_gc_sleep_time;
 			gc_set_wakelock(sbi, gc_th, false);
+			sbi->gc_mode = GC_NORMAL;
 			f2fs_msg(sbi->sb, KERN_INFO,
 				"No more GC victim found, sleeping for %u ms\n", wait_ms);
 		}
