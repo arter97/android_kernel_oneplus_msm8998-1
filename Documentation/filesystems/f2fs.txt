@@ -132,7 +132,7 @@ inline_dentry          Enable the inline dir feature: data in new created
                        directory entries can be written into inode block. The
                        space of inode block which is used to store inline
                        dentries is limited to ~3.4k.
-noinline_dentry        Diable the inline dentry feature.
+noinline_dentry        Disable the inline dentry feature.
 flush_merge	       Merge concurrent cache_flush commands as much as possible
                        to eliminate redundant command issues. If the underlying
 		       device handles the cache_flush command relatively slowly,
@@ -155,6 +155,26 @@ noinline_data          Disable the inline data feature, inline data feature is
                        enabled by default.
 data_flush             Enable data flushing before checkpoint in order to
                        persist data of regular and symlink.
+fault_injection=%d     Enable fault injection in all supported types with
+                       specified injection rate.
+fault_type=%d          Support configuring fault injection type, should be
+                       enabled with fault_injection option, fault type value
+                       is shown below, it supports single or combined type.
+                       Type_Name		Type_Value
+                       FAULT_KMALLOC		0x000000001
+                       FAULT_KVMALLOC		0x000000002
+                       FAULT_PAGE_ALLOC		0x000000004
+                       FAULT_PAGE_GET		0x000000008
+                       FAULT_ALLOC_BIO		0x000000010
+                       FAULT_ALLOC_NID		0x000000020
+                       FAULT_ORPHAN		0x000000040
+                       FAULT_BLOCK		0x000000080
+                       FAULT_DIR_DEPTH		0x000000100
+                       FAULT_EVICT_INODE	0x000000200
+                       FAULT_TRUNCATE		0x000000400
+                       FAULT_IO			0x000000800
+                       FAULT_CHECKPOINT		0x000001000
+                       FAULT_DISCARD		0x000002000
 mode=%s                Control block allocation mode which supports "adaptive"
                        and "lfs". In "lfs" mode, there should be no random
                        writes towards main area.
@@ -208,7 +228,7 @@ f2fs. Each file shows the whole f2fs information.
 SYSFS ENTRIES
 ================================================================================
 
-Information about mounted f2f2 file systems can be found in
+Information about mounted f2fs file systems can be found in
 /sys/fs/f2fs.  Each mounted filesystem will have a directory in
 /sys/fs/f2fs based on its device name (i.e., /sys/fs/f2fs/sda).
 The files in each per-device directory are shown in table below.
@@ -628,3 +648,63 @@ algorithm.
 In order to identify whether the data in the victim segment are valid or not,
 F2FS manages a bitmap. Each bit represents the validity of a block, and the
 bitmap is composed of a bit stream covering whole blocks in main area.
+
+Write-hint Policy
+-----------------
+
+1) whint_mode=off. F2FS only passes down WRITE_LIFE_NOT_SET.
+
+2) whint_mode=user-based. F2FS tries to pass down hints given by
+users.
+
+User                  F2FS                     Block
+----                  ----                     -----
+                      META                     WRITE_LIFE_NOT_SET
+                      HOT_NODE                 "
+                      WARM_NODE                "
+                      COLD_NODE                "
+*ioctl(COLD)          COLD_DATA                WRITE_LIFE_EXTREME
+*extension list       "                        "
+
+-- buffered io
+WRITE_LIFE_EXTREME    COLD_DATA                WRITE_LIFE_EXTREME
+WRITE_LIFE_SHORT      HOT_DATA                 WRITE_LIFE_SHORT
+WRITE_LIFE_NOT_SET    WARM_DATA                WRITE_LIFE_NOT_SET
+WRITE_LIFE_NONE       "                        "
+WRITE_LIFE_MEDIUM     "                        "
+WRITE_LIFE_LONG       "                        "
+
+-- direct io
+WRITE_LIFE_EXTREME    COLD_DATA                WRITE_LIFE_EXTREME
+WRITE_LIFE_SHORT      HOT_DATA                 WRITE_LIFE_SHORT
+WRITE_LIFE_NOT_SET    WARM_DATA                WRITE_LIFE_NOT_SET
+WRITE_LIFE_NONE       "                        WRITE_LIFE_NONE
+WRITE_LIFE_MEDIUM     "                        WRITE_LIFE_MEDIUM
+WRITE_LIFE_LONG       "                        WRITE_LIFE_LONG
+
+3) whint_mode=fs-based. F2FS passes down hints with its policy.
+
+User                  F2FS                     Block
+----                  ----                     -----
+                      META                     WRITE_LIFE_MEDIUM;
+                      HOT_NODE                 WRITE_LIFE_NOT_SET
+                      WARM_NODE                "
+                      COLD_NODE                WRITE_LIFE_NONE
+ioctl(COLD)           COLD_DATA                WRITE_LIFE_EXTREME
+extension list        "                        "
+
+-- buffered io
+WRITE_LIFE_EXTREME    COLD_DATA                WRITE_LIFE_EXTREME
+WRITE_LIFE_SHORT      HOT_DATA                 WRITE_LIFE_SHORT
+WRITE_LIFE_NOT_SET    WARM_DATA                WRITE_LIFE_LONG
+WRITE_LIFE_NONE       "                        "
+WRITE_LIFE_MEDIUM     "                        "
+WRITE_LIFE_LONG       "                        "
+
+-- direct io
+WRITE_LIFE_EXTREME    COLD_DATA                WRITE_LIFE_EXTREME
+WRITE_LIFE_SHORT      HOT_DATA                 WRITE_LIFE_SHORT
+WRITE_LIFE_NOT_SET    WARM_DATA                WRITE_LIFE_NOT_SET
+WRITE_LIFE_NONE       "                        WRITE_LIFE_NONE
+WRITE_LIFE_MEDIUM     "                        WRITE_LIFE_MEDIUM
+WRITE_LIFE_LONG       "                        WRITE_LIFE_LONG
