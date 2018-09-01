@@ -1876,11 +1876,6 @@ determine_plug:
 	return IRQ_HANDLED;
 }
 
-#if 0
-/*
- * liuhaituo@MultiMedia 2018/4/26 disable Elect Remove irq to resolve
- * apple-headset button issue
- */
 static irqreturn_t wcd_mbhc_hs_rem_irq(int irq, void *data)
 {
 	struct wcd_mbhc *mbhc = data;
@@ -1997,7 +1992,6 @@ report_unplug:
 	pr_debug("%s: leave\n", __func__);
 	return IRQ_HANDLED;
 }
-#endif
 
 static void wcd_btn_lpress_fn(struct work_struct *work)
 {
@@ -3016,11 +3010,6 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 				   false);
 	clear_bit(WCD_MBHC_ELEC_HS_INS, &mbhc->intr_status);
 
-#if 0
-/*
- * liuhaituo@MultiMedia 2018/4/26 disable Elect Remove irq to resolve
- * apple-headset button issue
- */
 	ret = mbhc->mbhc_cb->request_irq(codec,
 					 mbhc->intr_ids->mbhc_hs_rem_intr,
 					 wcd_mbhc_hs_rem_irq,
@@ -3032,7 +3021,6 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 	}
 	mbhc->mbhc_cb->irq_control(codec, mbhc->intr_ids->mbhc_hs_rem_intr,
 				   false);
-#endif
 	clear_bit(WCD_MBHC_ELEC_HS_REM, &mbhc->intr_status);
 
 	ret = mbhc->mbhc_cb->request_irq(codec, mbhc->intr_ids->hph_left_ocp,
@@ -3059,14 +3047,8 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 err_hphr_ocp_irq:
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->hph_left_ocp, mbhc);
 err_hphl_ocp_irq:
-#if 0
-/*
- * liuhaituo@MultiMedia 2018/4/26 disable Elect Remove irq to resolve
- * apple-headset button issue
- */
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->mbhc_hs_rem_intr, mbhc);
 err_mbhc_hs_rem_irq:
-#endif
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->mbhc_hs_ins_intr, mbhc);
 err_mbhc_hs_ins_irq:
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->mbhc_btn_release_intr,
@@ -3096,13 +3078,7 @@ void wcd_mbhc_deinit(struct wcd_mbhc *mbhc)
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->mbhc_btn_release_intr,
 				mbhc);
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->mbhc_hs_ins_intr, mbhc);
-#if 0
-/*
- * liuhaituo@MultiMedia 2018/4/26 disable Elect Remove irq to resolve
- * apple-headset button issue
- */
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->mbhc_hs_rem_intr, mbhc);
-#endif
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->hph_left_ocp, mbhc);
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->hph_right_ocp, mbhc);
 	if (mbhc->mbhc_cb && mbhc->mbhc_cb->register_notifier)
