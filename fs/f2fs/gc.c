@@ -229,6 +229,7 @@ void f2fs_start_all_gc_threads(void)
 			f2fs_start_gc_thread(sbi);
 			sbi->gc_thread->gc_wake = 1;
 			wake_up_interruptible_all(&sbi->gc_thread->gc_wait_queue_head);
+			wake_up_discard_thread(sbi, true);
 		} else {
 			f2fs_msg(sbi->sb, KERN_INFO,
 					"Invalid blocks lower than %d%%,"
