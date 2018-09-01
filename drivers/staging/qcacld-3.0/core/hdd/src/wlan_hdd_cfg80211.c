@@ -639,6 +639,8 @@ static const struct wiphy_wowlan_support wowlan_support_cfg80211_init = {
 };
 #endif
 
+#define HDD_STATION_INFO_RX_MC_BC_COUNT (1 << 31)
+
 bool hdd_is_ie_valid(const uint8_t *ie, size_t ie_len)
 {
 	uint8_t elen;
@@ -1584,18 +1586,17 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 
 	status = wlan_hdd_validate_context(hdd_ctx);
 	if (status)
-		goto out;
+		return status;
 
 	if (cds_is_sub_20_mhz_enabled()) {
 		hdd_err("ACS not supported in sub 20 MHz ch wd.");
-		status = -EINVAL;
-		goto out;
+		return -EINVAL;
 	}
-
-	if (qdf_atomic_inc_return(&hdd_ctx->is_acs_allowed) > 1) {
+	if (qdf_atomic_read(&adapter->sessionCtx.ap.acs_in_progress) > 0) {
 		hdd_err("ACS rejected as previous req already in progress");
-		status = -EINVAL;
-		goto out;
+		return -EINVAL;
+	} else {
+		qdf_atomic_set(&adapter->sessionCtx.ap.acs_in_progress, 1);
 	}
 
 	sap_config = &adapter->sessionCtx.ap.sapConfig;
@@ -1605,13 +1606,11 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 						wlan_hdd_cfg80211_do_acs_policy);
 	if (status) {
 		hdd_err("Invalid ATTR");
-		qdf_atomic_set(&hdd_ctx->is_acs_allowed, 0);
 		goto out;
 	}
 
 	if (!tb[QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE]) {
 		hdd_err("Attr hw_mode failed");
-		qdf_atomic_set(&hdd_ctx->is_acs_allowed, 0);
 		goto out;
 	}
 	sap_config->acs_cfg.hw_mode = nla_get_u8(
@@ -1682,7 +1681,6 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 					sizeof(uint8_t) *
 					sap_config->acs_cfg.ch_list_count);
 			if (sap_config->acs_cfg.ch_list == NULL) {
-				qdf_atomic_set(&hdd_ctx->is_acs_allowed, 0);
 				goto out;
 			}
 
@@ -1701,7 +1699,6 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 			if (sap_config->acs_cfg.ch_list == NULL) {
 				hdd_err("ACS config alloc fail");
 				status = -ENOMEM;
-				qdf_atomic_set(&hdd_ctx->is_acs_allowed, 0);
 				goto out;
 			}
 
@@ -1779,6 +1776,8 @@ out:
 		if (temp_skbuff != NULL)
 			return cfg80211_vendor_cmd_reply(temp_skbuff);
 	}
+
+	qdf_atomic_set(&adapter->sessionCtx.ap.acs_in_progress, 0);
 	wlan_hdd_undo_acs(adapter);
 	clear_bit(ACS_IN_PROGRESS, &hdd_ctx->g_event_flags);
 
@@ -3471,10 +3470,12 @@ static int wlan_hdd_cfg80211_handle_wisa_cmd(struct wiphy *wiphy,
 	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_REMOTE_CH_WIDTH
 #define REMOTE_SGI_ENABLE\
 	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_REMOTE_SGI_ENABLE
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
 #define REMOTE_PAD\
-	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_PAD
-#endif
+		QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_PAD
+#define REMOTE_RX_RETRY_COUNT \
+	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_REMOTE_RX_RETRY_COUNT
+#define REMOTE_RX_BC_MC_COUNT \
+	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_REMOTE_RX_BC_MC_COUNT
 
 static const struct nla_policy
 hdd_get_station_policy[STATION_MAX + 1] = {
@@ -4134,6 +4135,11 @@ static uint32_t hdd_add_tx_bitrate_sap_get_len(void)
 	return ((NLA_HDRLEN) + (sizeof(uint8_t) + NLA_HDRLEN));
 }
 
+static uint32_t hdd_add_sta_capability_get_len(void)
+{
+	return ((NLA_HDRLEN) + (sizeof(uint16_t) + NLA_HDRLEN));
+}
+
 /**
  * hdd_add_tx_bitrate_sap - add vhs nss info attribute
  * @skb: pointer to response skb buffer
@@ -4176,7 +4182,8 @@ fail:
 static uint32_t hdd_add_sta_info_sap_get_len(void)
 {
 	return ((NLA_HDRLEN) + (sizeof(uint8_t) + NLA_HDRLEN) +
-		hdd_add_tx_bitrate_sap_get_len());
+		hdd_add_tx_bitrate_sap_get_len() +
+		hdd_add_sta_capability_get_len());
 }
 
 /**
@@ -4256,6 +4263,11 @@ static int hdd_add_link_standard_info_sap(struct sk_buff *skb, int8_t rssi,
 		goto fail;
 	}
 
+	if (nla_put_u16(skb, NL80211_ATTR_STA_CAPABILITY,
+			stainfo->capability)) {
+		hdd_err("put fail");
+		goto fail;
+	}
 	nla_nest_end(skb, nla_attr);
 	return 0;
 fail:
@@ -4385,6 +4397,10 @@ static int hdd_get_cached_station_remote(hdd_context_t *hdd_ctx,
 			(sizeof(stainfo->tx_rate) +
 			 NLA_HDRLEN) +
 			(sizeof(stainfo->rx_rate) +
+			 NLA_HDRLEN) +
+			(sizeof(stainfo->rx_mc_bc_cnt) +
+			 NLA_HDRLEN) +
+			(sizeof(stainfo->rx_retry_cnt) +
 			 NLA_HDRLEN);
 
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(hdd_ctx->wiphy, nl_buf_len);
@@ -4421,6 +4437,30 @@ static int hdd_get_cached_station_remote(hdd_context_t *hdd_ctx,
 	if (nla_put_u32(skb, REMOTE_LAST_RX_RATE, stainfo->rx_rate)) {
 		hdd_err("rx rate put fail");
 		goto fail;
+	}
+
+	/*
+	 * MSB of rx_mc_bc_cnt indicates whether FW supports rx_mc_bc_cnt
+	 * feature or not, if first bit is 1 it indictes that FW supports this
+	 * feature, if it is 0 it indicates FW doesn't support this feature
+	 */
+	if (!(stainfo->rx_mc_bc_cnt & HDD_STATION_INFO_RX_MC_BC_COUNT)) {
+		hdd_debug("rx mc bc count is not supported by FW");
+	}
+
+	else if (nla_put_u32(skb, REMOTE_RX_BC_MC_COUNT,
+			     (stainfo->rx_mc_bc_cnt &
+			      (~HDD_STATION_INFO_RX_MC_BC_COUNT)))) {
+		hdd_err("rx mc bc put fail");
+		goto fail;
+	}
+	/* Currently rx_retry count is not supported */
+	if (stainfo->rx_retry_cnt) {
+		if (nla_put_u32(skb, REMOTE_RX_RETRY_COUNT,
+				stainfo->rx_retry_cnt)) {
+			hdd_err("rx retry count put fail");
+		goto fail;
+		}
 	}
 
 	qdf_mem_zero(stainfo, sizeof(*stainfo));
@@ -16943,12 +16983,25 @@ static int wlan_hdd_cfg80211_set_ie(hdd_adapter_t *pAdapter, const uint8_t *ie,
 			/* Setting WAPI Mode to ON=1 */
 			pAdapter->wapi_info.nWapiMode = 1;
 			hdd_debug("WAPI MODE IS %u", pAdapter->wapi_info.nWapiMode);
-			tmp = (uint8_t *)ie;
-			tmp = tmp + 4;  /* Skip element Id and Len, Version */
+			/* genie is pointing to data field of WAPI IE's buffer */
+			tmp = (uint8_t *)genie;
+			/* Validate length for Version(2 bytes) and Number
+			 * of AKM suite (2 bytes) in WAPI IE buffer, coming from
+			 * supplicant*/
+			if (eLen < 4) {
+				hdd_err("Invalid IE Len: %u", eLen);
+				return -EINVAL;
+			}
+			tmp = tmp + 2;  /* Skip Version */
 			/* Get the number of AKM suite */
 			akmsuiteCount = WPA_GET_LE16(tmp);
 			/* Skip the number of AKM suite */
 			tmp = tmp + 2;
+			/* Validate total length for WAPI IE's buffer */
+			if (eLen < (4 + (akmsuiteCount * sizeof(uint32_t)))) {
+				hdd_err("Invalid IE Len: %u", eLen);
+				return -EINVAL;
+			}
 			/* AKM suite list, each OUI contains 4 bytes */
 			akmlist = (uint32_t *)(tmp);
 			if (akmsuiteCount <= MAX_NUM_AKM_SUITES) {

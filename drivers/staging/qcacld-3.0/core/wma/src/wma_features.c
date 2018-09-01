@@ -1120,7 +1120,7 @@ QDF_STATUS wma_get_peer_info(WMA_HANDLE handle,
 		WMITLV_TAG_STRUC_wmi_request_stats_cmd_fixed_param,
 		WMITLV_GET_STRUCT_TLVLEN(wmi_request_stats_cmd_fixed_param));
 
-	cmd->stats_id = WMI_REQUEST_PEER_STAT;
+	cmd->stats_id = WMI_REQUEST_PEER_STAT | WMI_REQUEST_PEER_EXTD_STAT;
 	cmd->vdev_id = peer_info_req->sessionid;
 	WMI_CHAR_ARRAY_TO_MAC_ADDR(peer_info_req->peer_macaddr.bytes,
 				&cmd->peer_macaddr);
@@ -10186,7 +10186,9 @@ int wma_encrypt_decrypt_msg_handler(void *handle, uint8_t *data,
 	encrypt_decrypt_rsp_params.vdev_id = data_event->vdev_id;
 	encrypt_decrypt_rsp_params.status = data_event->status;
 
-	if (data_event->data_length > param_buf->num_enc80211_frame) {
+	if ((data_event->data_length > param_buf->num_enc80211_frame) ||
+	    (data_event->data_length > WMI_SVC_MSG_MAX_SIZE - WMI_TLV_HDR_SIZE -
+	     sizeof(*data_event))) {
 		WMA_LOGE("FW msg data_len %d more than TLV hdr %d",
 			 data_event->data_length,
 			 param_buf->num_enc80211_frame);

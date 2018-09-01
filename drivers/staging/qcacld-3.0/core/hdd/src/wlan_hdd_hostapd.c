@@ -203,7 +203,6 @@ int hdd_sap_context_init(hdd_context_t *hdd_ctx)
 	qdf_spinlock_create(&hdd_ctx->sap_update_info_lock);
 
 	qdf_atomic_init(&hdd_ctx->dfs_radar_found);
-	qdf_atomic_init(&hdd_ctx->is_acs_allowed);
 
 	return 0;
 }
@@ -1427,6 +1426,8 @@ static void hdd_fill_station_info(hdd_adapter_t *pHostapdAdapter,
 		return;
 	}
 
+	qdf_mem_copy(&stainfo->capability, &event->capability_info,
+		     sizeof(uint16_t));
 	stainfo->freq = cds_chan_to_freq(event->chan_info.chan_id);
 	stainfo->dot11_mode =
 		hdd_convert_dot11mode_from_phymode(event->chan_info.info);
@@ -2178,6 +2179,7 @@ QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 			stainfo->tx_rate = disassoc_comp->tx_rate;
 			stainfo->rx_rate = disassoc_comp->rx_rate;
 			stainfo->reason_code = disassoc_comp->reason_code;
+			stainfo->rx_mc_bc_cnt = disassoc_comp->rx_mc_bc_cnt;
 		}
 
 		qdf_status = qdf_event_set(&pHostapdState->qdf_sta_disassoc_event);
@@ -2535,7 +2537,8 @@ QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 		/* send vendor event to hostapd only for hostapd based acs*/
 		if (!pHddCtx->config->force_sap_acs)
 			wlan_hdd_cfg80211_acs_ch_select_evt(pHostapdAdapter);
-		qdf_atomic_set(&pHddCtx->is_acs_allowed, 0);
+		qdf_atomic_set(
+			&pHostapdAdapter->sessionCtx.ap.acs_in_progress, 0);
 		return QDF_STATUS_SUCCESS;
 	case eSAP_ECSA_CHANGE_CHAN_IND:
 		hdd_debug("Channel change indication from peer for channel %d",
@@ -6411,7 +6414,7 @@ QDF_STATUS hdd_init_ap_mode(hdd_adapter_t *pAdapter, bool reinit)
 	ENTER();
 
 	hdd_info("SSR in progress: %d", reinit);
-
+	qdf_atomic_init(&pAdapter->sessionCtx.ap.acs_in_progress);
 	if (reinit)
 		sapContext = pAdapter->sessionCtx.ap.sapContext;
 	else {
@@ -8824,6 +8827,8 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 
 	pConfig = &pAdapter->sessionCtx.ap.sapConfig;
 	pConfig->acs_cfg.acs_mode = false;
+	qdf_atomic_set(
+		&pAdapter->sessionCtx.ap.acs_in_progress, 0);
 	wlan_hdd_undo_acs(pAdapter);
 	qdf_mem_zero(&pConfig->acs_cfg, sizeof(struct sap_acs_cfg));
 

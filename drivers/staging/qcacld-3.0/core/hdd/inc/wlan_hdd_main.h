@@ -995,6 +995,14 @@ enum bss_stop_reason {
  * @vht_caps: VHT capabilities of current station
  * @reason_code: Disconnection reason code for current station
  * @rssi: RSSI of the current station reported from F/W
+ * @capability: Capability information of current station
+ * @rx_retry_cnt: Number of rx retries received from current station
+ *                Currently this feature is not supported from FW
+ * @rx_mc_bc_cnt: Multicast broadcast packet count received from
+ *              current station
+ * MSB of rx_mc_bc_cnt indicates whether FW supports rx_mc_bc_cnt
+ * feature or not, if first bit is 1 it indictes that FW supports this
+ * feature, if it is 0 it indicates FW doesn't support this feature
  */
 typedef struct {
 	bool isUsed;
@@ -1034,6 +1042,9 @@ typedef struct {
 	struct ieee80211_vht_cap vht_caps;
 	uint32_t reason_code;
 	int8_t rssi;
+	uint16_t capability;
+	uint32_t rx_mc_bc_cnt;
+	uint32_t rx_retry_cnt;
 } hdd_station_info_t;
 
 /**
@@ -1136,6 +1147,7 @@ struct hdd_ap_ctx_s {
 
 	/* Fw txrx stats info */
 	struct hdd_fw_txrx_stats txrx_stats;
+	qdf_atomic_t acs_in_progress;
 };
 
 typedef struct hdd_scaninfo_s {
@@ -2137,7 +2149,6 @@ struct hdd_context_s {
 	/* mutex lock to block concurrent access */
 	struct mutex power_stats_lock;
 #endif
-	qdf_atomic_t is_acs_allowed;
 	struct hdd_cache_channels *original_channels;
 	qdf_mutex_t cache_channel_lock;
 };
