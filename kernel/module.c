@@ -975,27 +975,24 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 {
 	struct module *mod;
 	char name[MODULE_NAME_LEN];
-	int ret, forced = 0;
+	int forced = 0;
 
 	if (!capable(CAP_SYS_MODULE) || modules_disabled)
-		return -EPERM;
+		return 0;
 
 	if (strncpy_from_user(name, name_user, MODULE_NAME_LEN-1) < 0)
-		return -EFAULT;
+		return 0;
 	name[MODULE_NAME_LEN-1] = '\0';
 
 	if (mutex_lock_interruptible(&module_mutex) != 0)
-		return -EINTR;
+		return 0;
 
 	mod = find_module(name);
-	if (!mod) {
-		ret = -ENOENT;
+	if (!mod)
 		goto out;
-	}
 
 	if (!list_empty(&mod->source_list)) {
 		/* Other modules depend on us: get rid of them first. */
-		ret = -EWOULDBLOCK;
 		goto out;
 	}
 
@@ -1003,7 +1000,6 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 	if (mod->state != MODULE_STATE_LIVE) {
 		/* FIXME: if (force), slam module count damn the torpedoes */
 		pr_debug("%s already dying\n", mod->name);
-		ret = -EBUSY;
 		goto out;
 	}
 
@@ -1012,14 +1008,12 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 		forced = try_force_unload(flags);
 		if (!forced) {
 			/* This module can't be removed */
-			ret = -EBUSY;
 			goto out;
 		}
 	}
 
 	/* Stop the machine so refcounts can't move and disable module. */
-	ret = try_stop_module(mod, flags, &forced);
-	if (ret != 0)
+	if (try_stop_module(mod, flags, &forced) != 0)
 		goto out;
 
 	mutex_unlock(&module_mutex);
@@ -1037,7 +1031,7 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 	return 0;
 out:
 	mutex_unlock(&module_mutex);
-	return ret;
+	return 0;
 }
 
 static inline void print_unload_info(struct seq_file *m, struct module *mod)
@@ -3670,16 +3664,18 @@ SYSCALL_DEFINE3(init_module, void __user *, umod,
 
 	err = may_init_module();
 	if (err)
-		return err;
+		return 0;
 
 	pr_debug("init_module: umod=%p, len=%lu, uargs=%p\n",
 	       umod, len, uargs);
 
 	err = copy_module_from_user(umod, len, &info);
 	if (err)
-		return err;
+		return 0;
 
-	return load_module(&info, uargs, 0);
+	load_module(&info, uargs, 0);
+
+	return 0;
 }
 
 SYSCALL_DEFINE3(finit_module, int, fd, const char __user *, uargs, int, flags)
@@ -3689,19 +3685,21 @@ SYSCALL_DEFINE3(finit_module, int, fd, const char __user *, uargs, int, flags)
 
 	err = may_init_module();
 	if (err)
-		return err;
+		return 0;
 
 	pr_debug("finit_module: fd=%d, uargs=%p, flags=%i\n", fd, uargs, flags);
 
 	if (flags & ~(MODULE_INIT_IGNORE_MODVERSIONS
 		      |MODULE_INIT_IGNORE_VERMAGIC))
-		return -EINVAL;
+		return 0;
 
 	err = copy_module_from_fd(fd, &info);
 	if (err)
-		return err;
+		return 0;
 
-	return load_module(&info, uargs, flags);
+	load_module(&info, uargs, flags);
+
+	return 0;
 }
 
 static inline int within(unsigned long addr, void *start, unsigned long size)
