@@ -205,6 +205,7 @@ void f2fs_stop_gc_thread(struct f2fs_sb_info *sbi)
 	kthread_stop(gc_th->f2fs_gc_task);
 	wake_lock_destroy(&gc_th->gc_wakelock);
 	kfree(gc_th);
+	sbi->gc_mode = GC_NORMAL;
 	sbi->gc_thread = NULL;
 }
 
