@@ -16,7 +16,7 @@ if [ "${1}" = "skip" ] ; then
 else
 	echo "Compiling kernel"
 	cp defconfig .config
-	make "$@" || exit 1
+	make -j$(nproc --all) "$@" || exit 1
 fi
 
 echo "Building new ramdisk"
